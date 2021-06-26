@@ -43,6 +43,7 @@ public class JadxArgs {
 	private boolean insertDebugLines = false;
 	private boolean inlineAnonymousClasses = true;
 	private boolean inlineMethods = true;
+	private boolean generateKotlinMetadata = true;
 
 	private boolean skipResources = false;
 	private boolean skipSources = false;
@@ -206,6 +207,14 @@ public class JadxArgs {
 
 	public void setInlineMethods(boolean inlineMethods) {
 		this.inlineMethods = inlineMethods;
+	}
+
+	public boolean isGenerateKotlinMetadata() {
+		return generateKotlinMetadata;
+	}
+
+	public void setGenerateKotlinMetadata(boolean generateKotlinMetadata) {
+		this.generateKotlinMetadata = generateKotlinMetadata;
 	}
 
 	public boolean isSkipResources() {

@@ -67,6 +67,9 @@ public class JadxCLIArgs {
 	@Parameter(names = { "--no-inline-methods" }, description = "disable methods inline")
 	protected boolean inlineMethods = true;
 
+	@Parameter(names = { "--no-generate-kotlin-metadata" }, description = "disable generating kotlin metadata")
+	protected boolean generateKotlinMetadata = true;
+
 	@Parameter(names = "--no-replace-consts", description = "don't replace constant value with matching constant field")
 	protected boolean replaceConsts = true;
 
@@ -220,6 +223,7 @@ public class JadxCLIArgs {
 		args.setInsertDebugLines(addDebugLines);
 		args.setInlineAnonymousClasses(inlineAnonymousClasses);
 		args.setInlineMethods(inlineMethods);
+		args.setGenerateKotlinMetadata(generateKotlinMetadata);
 		args.setRenameFlags(renameFlags);
 		args.setFsCaseSensitive(fsCaseSensitive);
 		return args;
