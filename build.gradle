@@ -1,6 +1,5 @@
 plugins {
 	id 'com.github.ben-manes.versions' version '0.38.0'
-	id "com.diffplug.spotless" version "5.12.5"
 }
 
 ext.jadxVersion = System.getenv('JADX_VERSION') ?: "dev"
@@ -70,40 +69,6 @@ allprojects {
 				from components.java
 			}
 		}
-	}
-}
-
-spotless {
-	java {
-		target fileTree(rootDir).matching {
-			include 'jadx-cli/src/**/java/**/*.java'
-			include 'jadx-core/src/**/java/**/*.java'
-			include 'jadx-gui/src/**/java/**/*.java'
-			include 'jadx-plugins/**/java/**/*.java'
-		}
-
-		importOrderFile 'config/code-formatter/eclipse.importorder'
-		eclipse().configFile 'config/code-formatter/eclipse.xml'
-		if (JavaVersion.current() < JavaVersion.VERSION_16) {
-			removeUnusedImports()
-		} else {
-			// google-format broken on java 16 (https://github.com/diffplug/spotless/issues/834)
-			println('Warning! Unused imports remove is disabled for Java 16')
-		}
-
-		lineEndings(com.diffplug.spotless.LineEnding.UNIX)
-		encoding("UTF-8")
-		trimTrailingWhitespace()
-		endWithNewline()
-	}
-	format 'misc', {
-		target '**/*.gradle', '**/*.md', '**/*.xml', '**/.gitignore', '**/.properties'
-		targetExclude ".gradle/**", ".idea/**", "*/build/**"
-
-		lineEndings(com.diffplug.spotless.LineEnding.UNIX)
-		encoding("UTF-8")
-		trimTrailingWhitespace()
-		endWithNewline()
 	}
 }
 

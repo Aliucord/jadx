@@ -31,7 +31,6 @@ public class SaveCode {
 		void save(String code, File file);
 	}
 
-
 	public static void save(File dir, ClassNode cls, ICodeInfo code, SaveAction action) {
 		if (cls.contains(AFlag.DONT_GENERATE)) {
 			return;
