@@ -59,7 +59,7 @@ public class ResourcesSaver implements Runnable {
 		switch (rc.getDataType()) {
 			case TEXT:
 			case RES_TABLE:
-				SaveCode.save(rc.getText(), outFile);
+				SaveCode.saveToFile(rc.getText().getCodeStr(), outFile);
 				return;
 
 			case DECODED_DATA:

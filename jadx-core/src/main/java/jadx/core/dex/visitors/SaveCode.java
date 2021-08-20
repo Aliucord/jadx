@@ -1,7 +1,13 @@
 package jadx.core.dex.visitors;
 
+import java.io.Closeable;
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
+import java.util.jar.JarEntry;
+import java.util.jar.JarOutputStream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,7 +26,13 @@ public class SaveCode {
 	private SaveCode() {
 	}
 
-	public static void save(File dir, ClassNode cls, ICodeInfo code) {
+	@FunctionalInterface
+	public interface SaveAction {
+		void save(String code, File file);
+	}
+
+
+	public static void save(File dir, ClassNode cls, ICodeInfo code, SaveAction action) {
 		if (cls.contains(AFlag.DONT_GENERATE)) {
 			return;
 		}
@@ -35,26 +47,54 @@ public class SaveCode {
 			return;
 		}
 		String fileName = cls.getClassInfo().getAliasFullPath() + getFileExtension(cls);
-		save(codeStr, dir, fileName);
-	}
 
-	public static void save(String code, File dir, String fileName) {
 		if (!ZipSecurity.isValidZipEntryName(fileName)) {
 			return;
 		}
-		save(code, new File(dir, fileName));
+
+		action.save(codeStr, new File(dir, fileName));
 	}
 
-	public static void save(ICodeInfo codeInfo, File file) {
-		save(codeInfo.getCodeStr(), file);
-	}
-
-	public static void save(String code, File file) {
+	public static void saveToFile(String code, File file) {
 		File outFile = FileUtils.prepareFile(file);
 		try (PrintWriter out = new PrintWriter(outFile, "UTF-8")) {
 			out.println(code);
 		} catch (Exception e) {
 			LOG.error("Save file error", e);
+		}
+	}
+
+	public static class SaveToJar implements SaveAction, Closeable {
+		JarOutputStream jarOutputStream;
+
+		public SaveToJar(File file) {
+			try {
+				jarOutputStream = new JarOutputStream(new FileOutputStream(file));
+			} catch (IOException e) {
+				LOG.error("Failed to create .jar file", e);
+			}
+		}
+
+		@Override
+		public void save(String code, File file) {
+			try {
+				jarOutputStream.putNextEntry(new JarEntry(file.getPath()));
+
+				jarOutputStream.write(code.getBytes(StandardCharsets.UTF_8));
+
+				jarOutputStream.closeEntry();
+			} catch (IOException e) {
+				LOG.error("Save file error", e);
+			}
+		}
+
+		@Override
+		public void close() {
+			try {
+				jarOutputStream.close();
+			} catch (IOException e) {
+				LOG.error("Jar save error", e);
+			}
 		}
 	}
 

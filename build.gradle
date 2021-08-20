@@ -10,6 +10,7 @@ println("jadx version: ${jadxVersion}")
 allprojects {
 	apply plugin: 'java'
 	apply plugin: 'checkstyle'
+	apply plugin: 'maven-publish'
 
 	version = jadxVersion
 
@@ -61,6 +62,14 @@ allprojects {
 	checkstyleMain {
 		// exclude all sources in samples module
 		exclude '**/samples/**'
+	}
+
+	publishing {
+		publications {
+			mavenJava(MavenPublication) {
+				from components.java
+			}
+		}
 	}
 }
 

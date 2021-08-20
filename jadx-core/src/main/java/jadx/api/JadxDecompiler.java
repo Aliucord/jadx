@@ -88,6 +88,8 @@ public final class JadxDecompiler implements Closeable {
 	private final Map<MethodNode, JavaMethod> methodsMap = new ConcurrentHashMap<>();
 	private final Map<FieldNode, JavaField> fieldsMap = new ConcurrentHashMap<>();
 
+	private final List<Runnable> cleanupTasks = new ArrayList<>();
+
 	public JadxDecompiler() {
 		this(new JadxArgs());
 	}
@@ -201,6 +203,8 @@ public final class JadxDecompiler implements Closeable {
 			LOG.error("Save interrupted", e);
 			Thread.currentThread().interrupt();
 		}
+
+		cleanupTasks.forEach(Runnable::run);
 	}
 
 	public ExecutorService getSaveExecutor() {
@@ -275,6 +279,15 @@ public final class JadxDecompiler implements Closeable {
 	}
 
 	private void appendSourcesSave(List<Runnable> tasks, File outDir) {
+		boolean isJar = outDir.getName().endsWith(".jar");
+
+		SaveCode.SaveToJar saveToJar = null;
+		if (isJar) {
+			saveToJar = new SaveCode.SaveToJar(outDir);
+			cleanupTasks.add(saveToJar::close);
+		}
+		SaveCode.SaveToJar finalSaveToJar = saveToJar;
+
 		Predicate<String> classFilter = args.getClassFilter();
 		for (JavaClass cls : getClasses()) {
 			if (cls.getClassNode().contains(AFlag.DONT_GENERATE)) {
@@ -283,14 +296,22 @@ public final class JadxDecompiler implements Closeable {
 			if (classFilter != null && !classFilter.test(cls.getFullName())) {
 				continue;
 			}
-			tasks.add(() -> {
+
+			Runnable runnable = () -> {
 				try {
 					ICodeInfo code = cls.getCodeInfo();
-					SaveCode.save(outDir, cls.getClassNode(), code);
+					SaveCode.save(isJar ? null : outDir, cls.getClassNode(), code, isJar ? finalSaveToJar : SaveCode::saveToFile);
 				} catch (Exception e) {
 					LOG.error("Error saving class: {}", cls.getFullName(), e);
 				}
-			});
+			};
+
+			if (isJar) {
+				// jars can't be multithreaded?
+				runnable.run();
+			} else {
+				tasks.add(runnable);
+			}
 		}
 	}
 

@@ -124,7 +124,7 @@ public class DotGraphVisitor extends AbstractVisitor {
 					.resolve(mth.getParentClass().getClassInfo().getAliasFullPath() + "_graphs")
 					.resolve(fileName)
 					.toFile();
-			SaveCode.save(dot.finish(), file);
+			SaveCode.saveToFile(dot.finish().getCodeStr(), file);
 		}
 
 		private void processMethodRegion(MethodNode mth) {
