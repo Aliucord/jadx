@@ -232,7 +232,7 @@ public class JadxArgs {
 	public void setGenerateKotlinMetadata(boolean generateKotlinMetadata) {
 		this.generateKotlinMetadata = generateKotlinMetadata;
 	}
-	
+
 	public boolean isExtractFinally() {
 		return extractFinally;
 	}
