@@ -25,10 +25,38 @@ import jadx.core.utils.InsnRemover;
 /**
  * Convert 'if' to ternary operation
  */
-public class TernaryMod implements IRegionIterativeVisitor {
+public class TernaryMod extends AbstractRegionVisitor implements IRegionIterativeVisitor {
+
+	private static final TernaryMod INSTANCE = new TernaryMod();
+
+	public static void process(MethodNode mth) {
+		// first: convert all found ternary nodes in one iteration
+		DepthRegionTraversal.traverse(mth, INSTANCE);
+		if (mth.contains(AFlag.REQUEST_CODE_SHRINK)) {
+			CodeShrinkVisitor.shrinkMethod(mth);
+		}
+		// second: iterative runs with shrink after each change
+		DepthRegionTraversal.traverseIterative(mth, INSTANCE);
+	}
+
+	@Override
+	public boolean enterRegion(MethodNode mth, IRegion region) {
+		if (processRegion(mth, region)) {
+			mth.add(AFlag.REQUEST_CODE_SHRINK);
+		}
+		return true;
+	}
 
 	@Override
 	public boolean visitRegion(MethodNode mth, IRegion region) {
+		if (processRegion(mth, region)) {
+			CodeShrinkVisitor.shrinkMethod(mth);
+			return true;
+		}
+		return false;
+	}
+
+	private static boolean processRegion(MethodNode mth, IRegion region) {
 		if (region instanceof IfRegion) {
 			return makeTernaryInsn(mth, (IfRegion) region);
 		}
@@ -106,7 +134,6 @@ public class TernaryMod implements IRegionIterativeVisitor {
 			InsnArg thenArg = InsnArg.wrapInsnIntoArg(thenInsn);
 			InsnArg elseArg = InsnArg.wrapInsnIntoArg(elseInsn);
 			TernaryInsn ternInsn = new TernaryInsn(ifRegion.getCondition(), resArg, thenArg, elseArg);
-			ternInsn.setSourceLine(thenInsn.getSourceLine());
 
 			InsnRemover.unbindResult(mth, elseInsn);
 
@@ -116,9 +143,6 @@ public class TernaryMod implements IRegionIterativeVisitor {
 			header.getInstructions().add(ternInsn);
 
 			clearConditionBlocks(conditionBlocks, header);
-
-			// shrink method again
-			CodeShrinkVisitor.shrinkMethod(mth);
 			return true;
 		}
 
@@ -141,7 +165,6 @@ public class TernaryMod implements IRegionIterativeVisitor {
 			eb.remove(AFlag.RETURN);
 
 			TernaryInsn ternInsn = new TernaryInsn(ifRegion.getCondition(), null, thenArg, elseArg);
-			ternInsn.setSourceLine(thenInsn.getSourceLine());
 			InsnNode retInsn = new InsnNode(InsnType.RETURN, 1);
 			InsnArg arg = InsnArg.wrapInsnIntoArg(ternInsn);
 			arg.setType(thenArg.getType());
@@ -153,8 +176,6 @@ public class TernaryMod implements IRegionIterativeVisitor {
 			header.add(AFlag.RETURN);
 
 			clearConditionBlocks(conditionBlocks, header);
-
-			CodeShrinkVisitor.shrinkMethod(mth);
 			return true;
 		}
 		return false;
@@ -278,10 +299,10 @@ public class TernaryMod implements IRegionIterativeVisitor {
 		if (!ifRegion.getParent().replaceSubBlock(ifRegion, header)) {
 			return;
 		}
-		InsnList.remove(block, insn);
 		TernaryInsn ternInsn = new TernaryInsn(ifRegion.getCondition(),
 				phiInsn.getResult(), InsnArg.wrapInsnIntoArg(insn), otherArg);
-		ternInsn.setSourceLine(insn.getSourceLine());
+		InsnRemover.unbindResult(mth, insn);
+		InsnList.remove(block, insn);
 
 		InsnRemover.unbindAllArgs(mth, phiInsn);
 		header.getInstructions().clear();
@@ -292,5 +313,8 @@ public class TernaryMod implements IRegionIterativeVisitor {
 
 		// shrink method again
 		CodeShrinkVisitor.shrinkMethod(mth);
+	}
+
+	private TernaryMod() {
 	}
 }

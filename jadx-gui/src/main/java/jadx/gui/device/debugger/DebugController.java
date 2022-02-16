@@ -1,12 +1,20 @@
 package jadx.gui.device.debugger;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import javax.swing.tree.DefaultMutableTreeNode;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import io.reactivex.annotations.NonNull;
 import io.reactivex.annotations.Nullable;
@@ -18,17 +26,27 @@ import jadx.core.dex.nodes.FieldNode;
 import jadx.core.utils.StringUtils;
 import jadx.core.utils.exceptions.JadxRuntimeException;
 import jadx.gui.device.debugger.BreakpointManager.FileBreakpoint;
-import jadx.gui.device.debugger.SmaliDebugger.*;
+import jadx.gui.device.debugger.SmaliDebugger.Frame;
+import jadx.gui.device.debugger.SmaliDebugger.RuntimeBreakpoint;
+import jadx.gui.device.debugger.SmaliDebugger.RuntimeDebugInfo;
+import jadx.gui.device.debugger.SmaliDebugger.RuntimeField;
+import jadx.gui.device.debugger.SmaliDebugger.RuntimeRegister;
+import jadx.gui.device.debugger.SmaliDebugger.RuntimeValue;
+import jadx.gui.device.debugger.SmaliDebugger.RuntimeVarInfo;
+import jadx.gui.device.debugger.SmaliDebugger.SmaliDebuggerException;
 import jadx.gui.device.debugger.smali.Smali;
 import jadx.gui.device.debugger.smali.SmaliRegister;
 import jadx.gui.treemodel.JClass;
-import jadx.gui.ui.IDebugController;
-import jadx.gui.ui.JDebuggerPanel;
-import jadx.gui.ui.JDebuggerPanel.*;
+import jadx.gui.ui.panel.IDebugController;
+import jadx.gui.ui.panel.JDebuggerPanel;
+import jadx.gui.ui.panel.JDebuggerPanel.IListElement;
+import jadx.gui.ui.panel.JDebuggerPanel.ValueTreeNode;
 
 import static jadx.gui.device.debugger.SmaliDebugger.RuntimeType;
 
 public final class DebugController implements SmaliDebugger.SuspendListener, IDebugController {
+	private static final Logger LOG = LoggerFactory.getLogger(DebugController.class);
+
 	private static final String ONCREATE_SIGNATURE = "onCreate(Landroid/os/Bundle;)V";
 	private static final Map<String, RuntimeType> TYPE_MAP = new HashMap<>();
 	private static final RuntimeType[] POSSIBLE_TYPES = { RuntimeType.OBJECT, RuntimeType.INT, RuntimeType.LONG };
@@ -367,7 +385,6 @@ public final class DebugController implements SmaliDebugger.SuspendListener, IDe
 		}
 		if (refreshLevel == 2) {
 			updateAllInfo(threadID, info.getOffset());
-
 		} else {
 			if (cur.smali != null && cur.frame != null) {
 				refreshRegInfo(info.getOffset());
@@ -772,7 +789,6 @@ public final class DebugController implements SmaliDebugger.SuspendListener, IDe
 					valNode.updateType("class_object").updateTypeID(debugger.readID(rValue));
 					break;
 			}
-
 		} catch (SmaliDebuggerException e) {
 			logErr(e);
 			return false;
@@ -913,16 +929,17 @@ public final class DebugController implements SmaliDebugger.SuspendListener, IDe
 	private void logErr(Exception e, String extra) {
 		debuggerPanel.log(e.getMessage());
 		debuggerPanel.log(extra);
-		e.printStackTrace();
+		LOG.error(extra, e);
 	}
 
 	private void logErr(Exception e) {
 		debuggerPanel.log(e.getMessage());
-		e.printStackTrace();
+		LOG.error("Debug error", e);
 	}
 
 	private void logErr(String e) {
 		debuggerPanel.log(e);
+		LOG.error("Debug error: {}", e);
 	}
 
 	private void scrollToPos(long codeOffset) {

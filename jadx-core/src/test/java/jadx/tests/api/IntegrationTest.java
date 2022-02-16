@@ -1,13 +1,11 @@
 package jadx.tests.api;
 
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.nio.file.Path;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -18,22 +16,27 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.jar.JarOutputStream;
 
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import jadx.api.CodePosition;
+import jadx.api.CommentsLevel;
 import jadx.api.ICodeInfo;
 import jadx.api.ICodeWriter;
 import jadx.api.JadxArgs;
 import jadx.api.JadxDecompiler;
 import jadx.api.JadxInternalAccess;
+import jadx.api.data.annotations.InsnCodeOffset;
 import jadx.core.dex.attributes.AFlag;
 import jadx.core.dex.attributes.AType;
-import jadx.core.dex.attributes.AttrList;
 import jadx.core.dex.attributes.IAttributeNode;
+import jadx.core.dex.attributes.nodes.JadxCommentsAttr;
 import jadx.core.dex.nodes.ClassNode;
 import jadx.core.dex.nodes.MethodNode;
 import jadx.core.dex.nodes.RootNode;
@@ -44,10 +47,10 @@ import jadx.core.utils.files.FileUtils;
 import jadx.core.xmlgen.ResourceStorage;
 import jadx.core.xmlgen.entry.ResourceEntry;
 import jadx.tests.api.compiler.DynamicCompiler;
+import jadx.tests.api.compiler.JavaUtils;
 import jadx.tests.api.compiler.StaticCompiler;
 import jadx.tests.api.utils.TestUtils;
 
-import static jadx.core.utils.files.FileUtils.addFileToJar;
 import static org.apache.commons.lang3.StringUtils.leftPad;
 import static org.apache.commons.lang3.StringUtils.rightPad;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -62,11 +65,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 public abstract class IntegrationTest extends TestUtils {
+	private static final Logger LOG = LoggerFactory.getLogger(IntegrationTest.class);
 
 	private static final String TEST_DIRECTORY = "src/test/java";
 	private static final String TEST_DIRECTORY2 = "jadx-core/" + TEST_DIRECTORY;
 
 	private static final String OUT_DIR = "test-out-tmp";
+
+	private static final String DEFAULT_INPUT_PLUGIN = "dx";
+	/**
+	 * Set 'TEST_INPUT_PLUGIN' env variable to use 'java' or 'dx' input in tests
+	 */
+	static final boolean USE_JAVA_INPUT = Utils.getOrElse(System.getenv("TEST_INPUT_PLUGIN"), DEFAULT_INPUT_PLUGIN).equals("java");
 
 	/**
 	 * Run auto check method if defined:
@@ -80,26 +90,22 @@ public abstract class IntegrationTest extends TestUtils {
 
 	protected JadxArgs args;
 
-	protected boolean deleteTmpFiles;
-	protected boolean withDebugInfo;
-	protected boolean unloadCls;
 	protected boolean compile;
+	protected boolean withDebugInfo;
 	protected boolean useEclipseCompiler;
+	private int targetJavaVersion = 8;
+
 	protected Map<Integer, String> resMap = Collections.emptyMap();
 
 	private boolean allowWarnInCode;
 	private boolean printLineNumbers;
-	private boolean printSmali;
+	private boolean printOffsets;
+	private boolean printDisassemble;
+	private Boolean useJavaInput = null;
 
 	private DynamicCompiler dynamicCompiler;
 
 	static {
-		// needed for post decompile check
-		AType.SKIP_ON_UNLOAD.addAll(Arrays.asList(
-				AType.JADX_ERROR,
-				AType.JADX_WARN,
-				AType.COMMENTS));
-
 		// enable debug checks
 		DebugChecks.checksEnabled = true;
 	}
@@ -108,8 +114,6 @@ public abstract class IntegrationTest extends TestUtils {
 
 	@BeforeEach
 	public void init() {
-		this.deleteTmpFiles = true;
-		this.unloadCls = true;
 		this.withDebugInfo = true;
 		this.compile = true;
 		this.useEclipseCompiler = false;
@@ -121,6 +125,7 @@ public abstract class IntegrationTest extends TestUtils {
 		args.setThreadsCount(1);
 		args.setSkipResources(true);
 		args.setFsCaseSensitive(false); // use same value on all systems
+		args.setCommentsLevel(CommentsLevel.DEBUG);
 	}
 
 	@AfterEach
@@ -141,10 +146,11 @@ public abstract class IntegrationTest extends TestUtils {
 
 	public ClassNode getClassNode(Class<?> clazz) {
 		try {
-			File jar = getJarForClass(clazz);
-			return getClassNodeFromFiles(Collections.singletonList(jar), clazz.getName());
+			List<File> files = compileClass(clazz);
+			assertThat("File list is empty", files, not(empty()));
+			return getClassNodeFromFiles(files, clazz.getName());
 		} catch (Exception e) {
-			e.printStackTrace();
+			LOG.error("Failed to get class node", e);
 			fail(e.getMessage());
 		}
 		return null;
@@ -180,11 +186,15 @@ public abstract class IntegrationTest extends TestUtils {
 
 	protected JadxDecompiler loadFiles(List<File> inputFiles) {
 		args.setInputFiles(inputFiles);
+		boolean useDx = !isJavaInput();
+		LOG.info(useDx ? "Using dex input" : "Using java input");
+		args.setUseDxInput(useDx);
+
 		JadxDecompiler d = new JadxDecompiler(args);
 		try {
 			d.load();
 		} catch (Exception e) {
-			e.printStackTrace();
+			LOG.error("Load failed", e);
 			d.close();
 			fail(e.getMessage());
 			return null;
@@ -199,25 +209,24 @@ public abstract class IntegrationTest extends TestUtils {
 	}
 
 	protected void decompileAndCheck(List<ClassNode> clsList) {
-		if (!unloadCls) {
-			clsList.forEach(cls -> cls.add(AFlag.DONT_UNLOAD_CLASS));
-		}
+		clsList.forEach(cls -> cls.add(AFlag.DONT_UNLOAD_CLASS)); // keep error and warning attributes
 		clsList.forEach(ClassNode::decompile);
 
 		for (ClassNode cls : clsList) {
 			System.out.println("-----------------------------------------------------------");
+			ICodeInfo code = cls.getCode();
 			if (printLineNumbers) {
-				printCodeWithLineNumbers(cls.getCode());
+				printCodeWithLineNumbers(code);
+			} else if (printOffsets) {
+				printCodeWithOffsets(code);
 			} else {
-				System.out.println(cls.getCode());
+				System.out.println(code);
 			}
 		}
 		System.out.println("-----------------------------------------------------------");
-
-		if (printSmali) {
-			clsList.forEach(this::printSmali);
+		if (printDisassemble) {
+			clsList.forEach(this::printDisasm);
 		}
-
 		runChecks(clsList);
 	}
 
@@ -231,9 +240,9 @@ public abstract class IntegrationTest extends TestUtils {
 		clsList.forEach(this::runAutoCheck);
 	}
 
-	private void printSmali(ClassNode cls) {
+	private void printDisasm(ClassNode cls) {
 		System.out.println("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
-		System.out.println(cls.getSmali());
+		System.out.println(cls.getDisassembledCode());
 		System.out.println("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 	}
 
@@ -250,6 +259,23 @@ public abstract class IntegrationTest extends TestUtils {
 				lineNumStr += " /* " + sourceLine + " */";
 			}
 			System.out.println(rightPad(lineNumStr, 20) + line);
+		}
+	}
+
+	private void printCodeWithOffsets(ICodeInfo code) {
+		String codeStr = code.getCodeStr();
+		Map<CodePosition, Object> annotations = code.getAnnotations();
+		String[] lines = codeStr.split(ICodeWriter.NL);
+		for (int i = 0; i < lines.length; i++) {
+			String line = lines[i];
+			int curLine = i + 1;
+			Object ann = annotations.get(new CodePosition(curLine, 0));
+			String offsetStr = "";
+			if (ann instanceof InsnCodeOffset) {
+				int offset = ((InsnCodeOffset) ann).getOffset();
+				offsetStr = "/* " + leftPad(String.valueOf(offset), 5) + " */";
+			}
+			System.out.println(rightPad(offsetStr, 12) + line);
 		}
 	}
 
@@ -275,23 +301,20 @@ public abstract class IntegrationTest extends TestUtils {
 						+ "\n " + Utils.listToString(mthNode.getAttributesStringsList(), "\n "));
 			}
 		}
-		assertThat(cls.getCode().toString(), not(containsString("inconsistent")));
+
+		String code = cls.getCode().getCodeStr();
+		assertThat(code, not(containsString("inconsistent")));
+		assertThat(code, not(containsString("JADX ERROR")));
 	}
 
 	private boolean hasErrors(IAttributeNode node) {
-		if (node.contains(AFlag.INCONSISTENT_CODE)
-				|| node.contains(AType.JADX_ERROR)
-				|| (node.contains(AType.JADX_WARN) && !allowWarnInCode)) {
+		if (node.contains(AFlag.INCONSISTENT_CODE) || node.contains(AType.JADX_ERROR)) {
 			return true;
 		}
 		if (!allowWarnInCode) {
-			AttrList<String> commentsAttr = node.get(AType.COMMENTS);
+			JadxCommentsAttr commentsAttr = node.get(AType.JADX_COMMENTS);
 			if (commentsAttr != null) {
-				for (String comment : commentsAttr.getList()) {
-					if (comment.contains("JADX WARN")) {
-						return true;
-					}
-				}
+				return commentsAttr.getComments().get(CommentsLevel.WARN) != null;
 			}
 		}
 		return false;
@@ -301,44 +324,55 @@ public abstract class IntegrationTest extends TestUtils {
 		String clsName = cls.getClassInfo().getFullName();
 		try {
 			// run 'check' method from original class
-			Class<?> origCls;
-			try {
-				origCls = Class.forName(clsName);
-			} catch (ClassNotFoundException e) {
-				// ignore
+			if (runSourceAutoCheck(clsName)) {
 				return;
-			}
-			Method checkMth;
-			try {
-				checkMth = origCls.getMethod(CHECK_METHOD_NAME);
-			} catch (NoSuchMethodException e) {
-				// ignore
-				return;
-			}
-			if (!checkMth.getReturnType().equals(void.class)
-					|| !Modifier.isPublic(checkMth.getModifiers())
-					|| Modifier.isStatic(checkMth.getModifiers())) {
-				fail("Wrong 'check' method");
-				return;
-			}
-			try {
-				limitExecTime(() -> checkMth.invoke(origCls.getConstructor().newInstance()));
-				System.out.println("Source check: PASSED");
-			} catch (Throwable e) {
-				throw new JadxRuntimeException("Source check failed", e);
 			}
 			// run 'check' method from decompiled class
 			if (compile) {
-				try {
-					limitExecTime(() -> invoke(cls, "check"));
-					System.out.println("Decompiled check: PASSED");
-				} catch (Throwable e) {
-					throw new JadxRuntimeException("Decompiled check failed", e);
-				}
+				runDecompiledAutoCheck(cls);
 			}
 		} catch (Exception e) {
-			e.printStackTrace();
+			LOG.error("Auto check failed", e);
 			fail("Auto check exception: " + e.getMessage());
+		}
+	}
+
+	private boolean runSourceAutoCheck(String clsName) {
+		Class<?> origCls;
+		try {
+			origCls = Class.forName(clsName);
+		} catch (ClassNotFoundException e) {
+			// ignore
+			return true;
+		}
+		Method checkMth;
+		try {
+			checkMth = origCls.getMethod(CHECK_METHOD_NAME);
+		} catch (NoSuchMethodException e) {
+			// ignore
+			return true;
+		}
+		if (!checkMth.getReturnType().equals(void.class)
+				|| !Modifier.isPublic(checkMth.getModifiers())
+				|| Modifier.isStatic(checkMth.getModifiers())) {
+			fail("Wrong 'check' method");
+			return true;
+		}
+		try {
+			limitExecTime(() -> checkMth.invoke(origCls.getConstructor().newInstance()));
+			System.out.println("Source check: PASSED");
+		} catch (Throwable e) {
+			throw new JadxRuntimeException("Source check failed", e);
+		}
+		return false;
+	}
+
+	public void runDecompiledAutoCheck(ClassNode cls) {
+		try {
+			limitExecTime(() -> invoke(cls, "check"));
+			System.out.println("Decompiled check: PASSED");
+		} catch (Throwable e) {
+			throw new JadxRuntimeException("Decompiled check failed", e);
 		}
 	}
 
@@ -380,10 +414,6 @@ public abstract class IntegrationTest extends TestUtils {
 		return null;
 	}
 
-	void compile(ClassNode cls) {
-		compile(Collections.singletonList(cls));
-	}
-
 	void compile(List<ClassNode> clsList) {
 		if (!compile) {
 			return;
@@ -407,36 +437,6 @@ public abstract class IntegrationTest extends TestUtils {
 		return dynamicCompiler.invoke(cls, methodName, types, args);
 	}
 
-	private File getJarForClass(Class<?> cls) throws IOException {
-		List<File> files = compileClass(cls);
-		assertThat("File list is empty", files, not(empty()));
-
-		String path = cls.getPackage().getName().replace('.', '/');
-		File temp = createTempFile(".jar");
-		try (JarOutputStream jo = new JarOutputStream(new FileOutputStream(temp))) {
-			for (File file : files) {
-				addFileToJar(jo, file, path + '/' + file.getName());
-			}
-		}
-		return temp;
-	}
-
-	protected File createTempFile(String suffix) {
-		try {
-			Path temp;
-			if (deleteTmpFiles) {
-				temp = FileUtils.createTempFile(suffix);
-			} else {
-				// don't delete on exit
-				temp = FileUtils.createTempFileNoDelete(suffix);
-				System.out.println("Temporary file saved: " + temp.toAbsolutePath());
-			}
-			return temp.toFile();
-		} catch (Exception e) {
-			throw new AssertionError(e.getMessage());
-		}
-	}
-
 	private List<File> compileClass(Class<?> cls) throws IOException {
 		String clsFullName = cls.getName();
 		String rootClsName;
@@ -455,7 +455,7 @@ public abstract class IntegrationTest extends TestUtils {
 		List<File> compileFileList = Collections.singletonList(file);
 
 		Path outTmp = FileUtils.createTempDir("jadx-tmp-classes");
-		List<File> files = StaticCompiler.compile(compileFileList, outTmp.toFile(), withDebugInfo, useEclipseCompiler);
+		List<File> files = StaticCompiler.compile(compileFileList, outTmp.toFile(), withDebugInfo, useEclipseCompiler, targetJavaVersion);
 		files.forEach(File::deleteOnExit);
 		// remove classes which are parents for test class
 		String clsName = clsFullName.substring(clsFullName.lastIndexOf('.') + 1);
@@ -490,6 +490,11 @@ public abstract class IntegrationTest extends TestUtils {
 		this.useEclipseCompiler = true;
 	}
 
+	public void useTargetJavaVersion(int version) {
+		Assumptions.assumeTrue(JavaUtils.checkJavaVersion(version), "skip test for higher java version");
+		this.targetJavaVersion = version;
+	}
+
 	protected void setFallback() {
 		disableCompilation();
 		this.args.setFallbackMode(true);
@@ -497,10 +502,6 @@ public abstract class IntegrationTest extends TestUtils {
 
 	protected void disableCompilation() {
 		this.compile = false;
-	}
-
-	protected void dontUnloadClass() {
-		this.unloadCls = false;
 	}
 
 	protected void enableDeobfuscation() {
@@ -518,28 +519,25 @@ public abstract class IntegrationTest extends TestUtils {
 		printLineNumbers = true;
 	}
 
-	// Use only for debug purpose
-	@Deprecated
-	protected void outputCFG() {
-		this.args.setCfgOutput(true);
-		this.args.setRawCFGOutput(true);
+	protected void printOffsets() {
+		printOffsets = true;
+	}
+
+	public void useJavaInput() {
+		this.useJavaInput = true;
+	}
+
+	public void useDexInput() {
+		Assumptions.assumeFalse(USE_JAVA_INPUT, "skip dex input tests");
+		this.useJavaInput = false;
+	}
+
+	protected boolean isJavaInput() {
+		return Utils.getOrElse(useJavaInput, USE_JAVA_INPUT);
 	}
 
 	// Use only for debug purpose
-	@Deprecated
-	protected void printSmali() {
-		this.printSmali = true;
-	}
-
-	// Use only for debug purpose
-	@Deprecated
-	protected void outputRawCFG() {
-		this.args.setRawCFGOutput(true);
-	}
-
-	// Use only for debug purpose
-	@Deprecated
-	protected void notDeleteTmpJar() {
-		this.deleteTmpFiles = false;
+	protected void printDisassemble() {
+		this.printDisassemble = true;
 	}
 }

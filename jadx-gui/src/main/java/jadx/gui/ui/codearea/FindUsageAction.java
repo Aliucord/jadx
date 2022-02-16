@@ -3,12 +3,13 @@ package jadx.gui.ui.codearea;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
 
-import javax.swing.*;
+import javax.swing.AbstractAction;
+import javax.swing.KeyStroke;
 
 import org.jetbrains.annotations.Nullable;
 
 import jadx.gui.treemodel.JNode;
-import jadx.gui.ui.UsageDialog;
+import jadx.gui.ui.dialog.UsageDialog;
 import jadx.gui.utils.NLS;
 
 import static javax.swing.KeyStroke.getKeyStroke;

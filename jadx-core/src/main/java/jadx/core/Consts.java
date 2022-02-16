@@ -6,6 +6,7 @@ public class Consts {
 	public static final boolean DEBUG_USAGE = false;
 	public static final boolean DEBUG_TYPE_INFERENCE = false;
 	public static final boolean DEBUG_OVERLOADED_CASTS = false;
+	public static final boolean DEBUG_EXC_HANDLERS = false;
 
 	public static final String CLASS_OBJECT = "java.lang.Object";
 	public static final String CLASS_STRING = "java.lang.String";
@@ -15,13 +16,6 @@ public class Consts {
 	public static final String CLASS_ENUM = "java.lang.Enum";
 
 	public static final String CLASS_STRING_BUILDER = "java.lang.StringBuilder";
-
-	public static final String DALVIK_ANNOTATION_PKG = "Ldalvik/annotation/";
-	public static final String DALVIK_SIGNATURE = "Ldalvik/annotation/Signature;";
-	public static final String DALVIK_INNER_CLASS = "Ldalvik/annotation/InnerClass;";
-	public static final String DALVIK_THROWS = "Ldalvik/annotation/Throws;";
-	public static final String DALVIK_ANNOTATION_DEFAULT = "Ldalvik/annotation/AnnotationDefault;";
-
 	public static final String OVERRIDE_ANNOTATION = "Ljava/lang/Override;";
 
 	public static final String DEFAULT_PACKAGE_NAME = "defpackage";

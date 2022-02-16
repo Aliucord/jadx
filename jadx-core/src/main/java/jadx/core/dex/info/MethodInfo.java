@@ -1,6 +1,7 @@
 package jadx.core.dex.info;
 
-import java.util.*;
+import java.util.List;
+import java.util.Objects;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -9,7 +10,6 @@ import jadx.api.plugins.input.data.IMethodRef;
 import jadx.core.codegen.TypeGen;
 import jadx.core.dex.instructions.args.ArgType;
 import jadx.core.dex.nodes.RootNode;
-import jadx.core.dex.nodes.VariableNode;
 import jadx.core.utils.Utils;
 
 public final class MethodInfo implements Comparable<MethodInfo> {
@@ -23,7 +23,6 @@ public final class MethodInfo implements Comparable<MethodInfo> {
 	private final int hash;
 
 	private String alias;
-	private Map<String, String> varNameMap;
 
 	private MethodInfo(ClassInfo declClass, String name, List<ArgType> args, ArgType retType) {
 		this.name = name;
@@ -39,9 +38,11 @@ public final class MethodInfo implements Comparable<MethodInfo> {
 	public static MethodInfo fromRef(RootNode root, IMethodRef methodRef) {
 		InfoStorage infoStorage = root.getInfoStorage();
 		int uniqId = methodRef.getUniqId();
-		MethodInfo prevMth = infoStorage.getByUniqId(uniqId);
-		if (prevMth != null) {
-			return prevMth;
+		if (uniqId != 0) {
+			MethodInfo prevMth = infoStorage.getByUniqId(uniqId);
+			if (prevMth != null) {
+				return prevMth;
+			}
 		}
 		methodRef.load();
 		ArgType parentClsType = ArgType.parse(methodRef.getParentClassType());
@@ -50,7 +51,9 @@ public final class MethodInfo implements Comparable<MethodInfo> {
 		List<ArgType> args = Utils.collectionMap(methodRef.getArgTypes(), ArgType::parse);
 		MethodInfo newMth = new MethodInfo(parentClass, methodRef.getName(), args, returnType);
 		MethodInfo uniqMth = infoStorage.putMethod(newMth);
-		infoStorage.putByUniqId(uniqId, uniqMth);
+		if (uniqId != 0) {
+			infoStorage.putByUniqId(uniqId, uniqMth);
+		}
 		return uniqMth;
 	}
 
@@ -150,31 +153,12 @@ public final class MethodInfo implements Comparable<MethodInfo> {
 		this.alias = alias;
 	}
 
+	public void removeAlias() {
+		this.alias = name;
+	}
+
 	public boolean hasAlias() {
 		return !name.equals(alias);
-	}
-
-	public synchronized void setVarNameMap(Set<String> names) {
-		if (varNameMap == null) {
-			varNameMap = new HashMap<>();
-		}
-		for (String name : names) {
-			String[] indexesAndName = name.split(VariableNode.VAR_SEPARATOR);
-			if (indexesAndName.length == 2) {
-				varNameMap.put(indexesAndName[0], indexesAndName[1]);
-			}
-		}
-	}
-
-	public String getVariableName(String indexes) {
-		if (varNameMap != null) {
-			return varNameMap.get(indexes);
-		}
-		return null;
-	}
-
-	public boolean hasVarNameMap() {
-		return varNameMap != null && varNameMap.size() > 0;
 	}
 
 	public int calcHashCode() {

@@ -8,19 +8,17 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.file.FileVisitOption;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.Enumeration;
 import java.util.List;
 import java.util.Objects;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -41,6 +39,26 @@ public class FileUtils {
 	private FileUtils() {
 	}
 
+	public static List<Path> expandDirs(List<Path> paths) {
+		List<Path> files = new ArrayList<>(paths.size());
+		for (Path path : paths) {
+			if (Files.isDirectory(path)) {
+				expandDir(path, files);
+			} else {
+				files.add(path);
+			}
+		}
+		return files;
+	}
+
+	private static void expandDir(Path dir, List<Path> files) {
+		try (Stream<Path> walk = Files.walk(dir, FileVisitOption.FOLLOW_LINKS)) {
+			walk.filter(Files::isRegularFile).forEach(files::add);
+		} catch (Exception e) {
+			LOG.error("Failed to list files in directory: {}", dir, e);
+		}
+	}
+
 	public static void addFileToJar(JarOutputStream jar, File source, String entryName) throws IOException {
 		try (BufferedInputStream in = new BufferedInputStream(new FileInputStream(source))) {
 			JarEntry entry = new JarEntry(entryName);
@@ -54,7 +72,7 @@ public class FileUtils {
 
 	public static void makeDirsForFile(Path path) {
 		if (path != null) {
-			makeDirs(path.getParent().toFile());
+			makeDirs(path.toAbsolutePath().getParent().toFile());
 		}
 	}
 
@@ -96,7 +114,11 @@ public class FileUtils {
 		try (Stream<Path> pathStream = Files.walk(dir)) {
 			pathStream.sorted(Comparator.reverseOrder())
 					.map(Path::toFile)
-					.forEach(File::delete);
+					.forEach(file -> {
+						if (!file.delete()) {
+							LOG.warn("Failed to remove file: {}", file.getAbsolutePath());
+						}
+					});
 		} catch (Exception e) {
 			throw new JadxRuntimeException("Failed to delete directory " + dir, e);
 		}
@@ -151,7 +173,7 @@ public class FileUtils {
 
 	public static Path createTempFileNoDelete(String suffix) {
 		try {
-			return Files.createTempFile(TEMP_ROOT_DIR, JADX_TMP_PREFIX, suffix);
+			return Files.createTempFile(Files.createTempDirectory("jadx-persist"), "jadx-", suffix);
 		} catch (Exception e) {
 			throw new JadxRuntimeException("Failed to create temp file with suffix: " + suffix, e);
 		}
@@ -236,45 +258,6 @@ public class FileUtils {
 			LOG.error("Failed read zip file: {}", file.getAbsolutePath(), e);
 		}
 		return false;
-	}
-
-	private static List<String> getZipFileList(File file) {
-		List<String> filesList = new ArrayList<>();
-		try (ZipFile zipFile = new ZipFile(file)) {
-			Enumeration<? extends ZipEntry> entries = zipFile.entries();
-			while (entries.hasMoreElements()) {
-				ZipEntry entry = entries.nextElement();
-				filesList.add(entry.getName());
-			}
-		} catch (Exception e) {
-			LOG.error("Error read zip file '{}'", file.getAbsolutePath(), e);
-		}
-		return filesList;
-	}
-
-	public static boolean isApkFile(File file) {
-		if (!isZipFile(file)) {
-			return false;
-		}
-		List<String> filesList = getZipFileList(file);
-		return filesList.contains("AndroidManifest.xml")
-				&& filesList.contains("classes.dex");
-	}
-
-	public static boolean isZipDexFile(File file) {
-		if (!isZipFile(file) || !isZipFileCanBeOpen(file)) {
-			return false;
-		}
-		List<String> filesList = getZipFileList(file);
-		return filesList.contains("classes.dex");
-	}
-
-	private static boolean isZipFileCanBeOpen(File file) {
-		try (ZipFile zipFile = new ZipFile(file)) {
-			return zipFile.entries().hasMoreElements();
-		} catch (Exception e) {
-			return false;
-		}
 	}
 
 	public static String getPathBaseName(Path file) {

@@ -9,6 +9,7 @@ import java.util.Map;
 import org.jetbrains.annotations.Nullable;
 
 import jadx.api.plugins.input.data.ILocalVar;
+import jadx.api.plugins.input.data.impl.DebugInfo;
 import jadx.plugins.input.dex.sections.DexConsts;
 import jadx.plugins.input.dex.sections.SectionReader;
 
@@ -34,7 +35,7 @@ public class DebugInfoParser {
 	private final SectionReader in;
 	private final SectionReader ext;
 
-	private final LocalVar[] locals;
+	private final DexLocalVar[] locals;
 	private final int codeSize;
 
 	private List<ILocalVar> resultList;
@@ -48,7 +49,7 @@ public class DebugInfoParser {
 	public DebugInfoParser(SectionReader in, int regsCount, int codeSize) {
 		this.in = in;
 		this.ext = in.copy();
-		this.locals = new LocalVar[regsCount];
+		this.locals = new DexLocalVar[regsCount];
 		this.codeSize = codeSize;
 	}
 
@@ -96,7 +97,7 @@ public class DebugInfoParser {
 			String name = ext.getString(nameId);
 			if (name != null && i < argsCount) {
 				int regNum = argRegs[i];
-				startVar(new LocalVar(regNum, name, argTypes.get(i)), -1);
+				startVar(new DexLocalVar(regNum, name, argTypes.get(i)), -1);
 				varsInfoFound = true;
 			}
 		}
@@ -123,7 +124,7 @@ public class DebugInfoParser {
 					int regNum = in.readUleb128();
 					int nameId = in.readUleb128() - 1;
 					int type = in.readUleb128() - 1;
-					LocalVar var = new LocalVar(ext, regNum, nameId, type, DexConsts.NO_INDEX);
+					DexLocalVar var = new DexLocalVar(ext, regNum, nameId, type, DexConsts.NO_INDEX);
 					startVar(var, addr);
 					varsInfoFound = true;
 					break;
@@ -133,7 +134,7 @@ public class DebugInfoParser {
 					int nameId = in.readUleb128p1();
 					int type = in.readUleb128p1();
 					int sign = in.readUleb128p1();
-					LocalVar var = new LocalVar(ext, regNum, nameId, type, sign);
+					DexLocalVar var = new DexLocalVar(ext, regNum, nameId, type, sign);
 					startVar(var, addr);
 					varsInfoFound = true;
 					break;
@@ -146,7 +147,7 @@ public class DebugInfoParser {
 				}
 				case DBG_END_LOCAL: {
 					int regNum = in.readUleb128();
-					LocalVar var = locals[regNum];
+					DexLocalVar var = locals[regNum];
 					if (var != null) {
 						endVar(var, addr);
 					}
@@ -178,29 +179,20 @@ public class DebugInfoParser {
 		}
 
 		if (varsInfoFound) {
-			for (LocalVar var : locals) {
+			for (DexLocalVar var : locals) {
 				if (var != null && !var.isEnd()) {
 					endVar(var, codeSize - 1);
 				}
 			}
 		}
-		setSourceLines(addr, codeSize, line);
 
 		return new DebugInfo(linesMap, resultList);
 	}
 
 	private int addrChange(int addr, int addrInc, int line) {
-		int newAddr = addr + addrInc;
-		int maxAddr = codeSize - 1;
-		newAddr = Math.min(newAddr, maxAddr);
-		setSourceLines(addr, newAddr, line);
+		int newAddr = Math.min(addr + addrInc, codeSize - 1);
+		setLine(newAddr, line);
 		return newAddr;
-	}
-
-	private void setSourceLines(int start, int end, int line) {
-		for (int offset = start + 1; offset < end; offset++) {
-			setLine(offset, line);
-		}
 	}
 
 	private void setLine(int offset, int line) {
@@ -208,17 +200,17 @@ public class DebugInfoParser {
 	}
 
 	private void restartVar(int regNum, int addr) {
-		LocalVar prev = locals[regNum];
+		DexLocalVar prev = locals[regNum];
 		if (prev != null) {
 			endVar(prev, addr);
-			LocalVar newVar = new LocalVar(regNum, prev.getName(), prev.getType(), prev.getSignature());
+			DexLocalVar newVar = new DexLocalVar(regNum, prev.getName(), prev.getType(), prev.getSignature());
 			startVar(newVar, addr);
 		}
 	}
 
-	private void startVar(LocalVar newVar, int addr) {
+	private void startVar(DexLocalVar newVar, int addr) {
 		int regNum = newVar.getRegNum();
-		LocalVar prev = locals[regNum];
+		DexLocalVar prev = locals[regNum];
 		if (prev != null) {
 			endVar(prev, addr);
 		}
@@ -226,7 +218,7 @@ public class DebugInfoParser {
 		locals[regNum] = newVar;
 	}
 
-	private void endVar(LocalVar var, int addr) {
+	private void endVar(DexLocalVar var, int addr) {
 		if (var.end(addr)) {
 			resultList.add(var);
 		}

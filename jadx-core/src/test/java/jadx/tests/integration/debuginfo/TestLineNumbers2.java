@@ -1,7 +1,6 @@
 package jadx.tests.integration.debuginfo;
 
 import java.lang.ref.WeakReference;
-import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
@@ -15,7 +14,7 @@ public class TestLineNumbers2 extends IntegrationTest {
 	public static class TestCls {
 		private WeakReference<TestCls> f;
 
-		// keep at line 18
+		// keep constructor at line 18
 		public TestCls(TestCls s) {
 		}
 
@@ -38,8 +37,12 @@ public class TestLineNumbers2 extends IntegrationTest {
 		printLineNumbers();
 
 		ClassNode cls = getClassNode(TestCls.class);
-		Map<Integer, Integer> lineMapping = cls.getCode().getLineMapping();
-		assertEquals("{5=17, 8=18, 11=22, 12=23, 13=24, 14=28, 16=25, 17=26, 18=28, 21=31, 22=32}",
-				lineMapping.toString());
+		String linesMapStr = cls.getCode().getLineMapping().toString();
+		if (isJavaInput()) {
+			assertEquals("{6=16, 9=17, 12=21, 13=22, 14=23, 16=25, 18=27, 21=30}", linesMapStr);
+		} else {
+			// TODO: invert condition to match source lines
+			assertEquals("{6=16, 9=17, 12=21, 13=22, 14=23, 15=27, 17=24, 18=25, 19=27, 22=30, 23=31}", linesMapStr);
+		}
 	}
 }

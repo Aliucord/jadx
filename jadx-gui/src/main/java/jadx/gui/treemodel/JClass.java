@@ -1,8 +1,10 @@
 package jadx.gui.treemodel;
 
-import javax.swing.*;
+import javax.swing.Icon;
+import javax.swing.ImageIcon;
 
 import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import jadx.api.ICodeInfo;
@@ -12,19 +14,24 @@ import jadx.api.JavaMethod;
 import jadx.api.JavaNode;
 import jadx.core.dex.attributes.AFlag;
 import jadx.core.dex.info.AccessInfo;
+import jadx.gui.ui.TabbedPane;
+import jadx.gui.ui.codearea.ClassCodeContentPanel;
+import jadx.gui.ui.panel.ContentPanel;
+import jadx.gui.utils.CacheObject;
 import jadx.gui.utils.NLS;
 import jadx.gui.utils.UiUtils;
 
-public class JClass extends JLoadableNode {
+public class JClass extends JLoadableNode implements Comparable<JClass> {
 	private static final long serialVersionUID = -1239986875244097177L;
 
-	private static final ImageIcon ICON_CLASS = UiUtils.openIcon("class_obj");
-	private static final ImageIcon ICON_CLASS_DEFAULT = UiUtils.openIcon("class_default_obj");
-	private static final ImageIcon ICON_CLASS_PRIVATE = UiUtils.openIcon("innerclass_private_obj");
-	private static final ImageIcon ICON_CLASS_PROTECTED = UiUtils.openIcon("innerclass_protected_obj");
-	private static final ImageIcon ICON_INTERFACE = UiUtils.openIcon("int_obj");
-	private static final ImageIcon ICON_ENUM = UiUtils.openIcon("enum_obj");
-	private static final ImageIcon ICON_ANNOTATION = UiUtils.openIcon("annotation_obj");
+	private static final ImageIcon ICON_CLASS = UiUtils.openSvgIcon("nodes/class");
+	private static final ImageIcon ICON_CLASS_ABSTRACT = UiUtils.openSvgIcon("nodes/abstractClass");
+	private static final ImageIcon ICON_CLASS_PUBLIC = UiUtils.openSvgIcon("nodes/publicClass");
+	private static final ImageIcon ICON_CLASS_PRIVATE = UiUtils.openSvgIcon("nodes/privateClass");
+	private static final ImageIcon ICON_CLASS_PROTECTED = UiUtils.openSvgIcon("nodes/protectedClass");
+	private static final ImageIcon ICON_INTERFACE = UiUtils.openSvgIcon("nodes/interface");
+	private static final ImageIcon ICON_ENUM = UiUtils.openSvgIcon("nodes/enum");
+	private static final ImageIcon ICON_ANNOTATION = UiUtils.openSvgIcon("nodes/annotationtype");
 
 	private final transient JavaClass cls;
 	private final transient JClass jParent;
@@ -65,10 +72,20 @@ public class JClass extends JLoadableNode {
 		update();
 	}
 
-	public synchronized void reload() {
+	public synchronized void reload(CacheObject cache) {
+		cache.getNodeCache().removeWholeClass(cls);
+		cache.getIndexService().remove(cls);
 		cls.reload();
 		loaded = true;
 		update();
+		cache.getIndexService().indexCls(cls);
+	}
+
+	public synchronized void unload(CacheObject cache) {
+		cache.getNodeCache().removeWholeClass(cls);
+		cache.getIndexService().remove(cls);
+		cls.unload();
+		loaded = false;
 	}
 
 	public synchronized void update() {
@@ -101,6 +118,11 @@ public class JClass extends JLoadableNode {
 	}
 
 	@Override
+	public ContentPanel getContentPanel(TabbedPane tabbedPane) {
+		return new ClassCodeContentPanel(tabbedPane, this);
+	}
+
+	@Override
 	public String getSmali() {
 		return cls.getSmali();
 	}
@@ -122,6 +144,9 @@ public class JClass extends JLoadableNode {
 		if (accessInfo.isInterface()) {
 			return ICON_INTERFACE;
 		}
+		if (accessInfo.isAbstract()) {
+			return ICON_CLASS_ABSTRACT;
+		}
 		if (accessInfo.isProtected()) {
 			return ICON_CLASS_PROTECTED;
 		}
@@ -129,9 +154,9 @@ public class JClass extends JLoadableNode {
 			return ICON_CLASS_PRIVATE;
 		}
 		if (accessInfo.isPublic()) {
-			return ICON_CLASS;
+			return ICON_CLASS_PUBLIC;
 		}
-		return ICON_CLASS_DEFAULT;
+		return ICON_CLASS;
 	}
 
 	@Override
@@ -184,5 +209,10 @@ public class JClass extends JLoadableNode {
 	@Override
 	public String makeLongString() {
 		return cls.getFullName();
+	}
+
+	@Override
+	public int compareTo(@NotNull JClass o) {
+		return this.getFullName().compareTo(o.getFullName());
 	}
 }

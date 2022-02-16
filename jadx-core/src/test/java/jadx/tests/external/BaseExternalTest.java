@@ -10,14 +10,15 @@ import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import jadx.api.CommentsLevel;
 import jadx.api.ICodeWriter;
 import jadx.api.JadxArgs;
 import jadx.api.JadxDecompiler;
 import jadx.api.JadxInternalAccess;
-import jadx.api.JavaClass;
 import jadx.core.dex.nodes.ClassNode;
 import jadx.core.dex.nodes.MethodNode;
 import jadx.core.dex.nodes.RootNode;
+import jadx.core.utils.DebugChecks;
 import jadx.core.utils.exceptions.JadxRuntimeException;
 import jadx.tests.api.IntegrationTest;
 
@@ -31,37 +32,40 @@ public abstract class BaseExternalTest extends IntegrationTest {
 	protected abstract String getSamplesDir();
 
 	protected JadxArgs prepare(String inputFile) {
+		return prepare(new File(getSamplesDir(), inputFile));
+	}
+
+	protected JadxArgs prepare(File input) {
+		DebugChecks.checksEnabled = false;
 		JadxArgs args = new JadxArgs();
-		args.getInputFiles().add(new File(getSamplesDir(), inputFile));
+		args.getInputFiles().add(input);
 		args.setOutDir(new File("../jadx-external-tests-tmp"));
+		args.setSkipFilesSave(true);
+		args.setSkipResources(true);
+		args.setShowInconsistentCode(true);
+		args.setCommentsLevel(CommentsLevel.DEBUG);
 		return args;
 	}
 
-	protected void decompile(JadxArgs jadxArgs) {
-		decompile(jadxArgs, null, null);
+	protected JadxDecompiler decompile(JadxArgs jadxArgs) {
+		return decompile(jadxArgs, null, null);
 	}
 
-	protected void decompile(JadxArgs jadxArgs, String clsPatternStr) {
-		decompile(jadxArgs, clsPatternStr, null);
+	protected JadxDecompiler decompile(JadxArgs jadxArgs, String clsPatternStr) {
+		return decompile(jadxArgs, clsPatternStr, null);
 	}
 
-	protected void decompile(JadxArgs jadxArgs, @Nullable String clsPatternStr, @Nullable String mthPatternStr) {
+	protected JadxDecompiler decompile(JadxArgs jadxArgs, @Nullable String clsPatternStr, @Nullable String mthPatternStr) {
 		JadxDecompiler jadx = new JadxDecompiler(jadxArgs);
 		jadx.load();
 
 		if (clsPatternStr == null) {
-			processAll(jadx);
-			// jadx.saveSources();
+			jadx.save();
 		} else {
 			processByPatterns(jadx, clsPatternStr, mthPatternStr);
 		}
 		printErrorReport(jadx);
-	}
-
-	private void processAll(JadxDecompiler jadx) {
-		for (JavaClass javaClass : jadx.getClasses()) {
-			javaClass.decompile();
-		}
+		return jadx;
 	}
 
 	private void processByPatterns(JadxDecompiler jadx, String clsPattern, @Nullable String mthPattern) {

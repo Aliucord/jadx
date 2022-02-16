@@ -2,12 +2,18 @@ package jadx.gui.utils.search;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 import javax.swing.tree.TreeNode;
+
+import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import io.reactivex.BackpressureStrategy;
 import io.reactivex.Flowable;
@@ -20,12 +26,16 @@ import jadx.gui.treemodel.JResSearchNode;
 import jadx.gui.treemodel.JResource;
 import jadx.gui.utils.CacheObject;
 
-import static jadx.core.utils.StringUtils.*;
+import static jadx.core.utils.StringUtils.countLinesByPos;
+import static jadx.core.utils.StringUtils.getLine;
 
 public class ResourceIndex {
+	private static final Logger LOG = LoggerFactory.getLogger(ResourceIndex.class);
+
 	private final List<JResource> resNodes = new ArrayList<>();
 	private final Set<String> extSet = new HashSet<>();
-	private CacheObject cache;
+	private final CacheObject cache;
+
 	private String fileExts;
 	private boolean anyExt;
 	private int sizeLimit;
@@ -37,7 +47,6 @@ public class ResourceIndex {
 	private void search(final JResource resNode,
 			FlowableEmitter<JResSearchNode> emitter,
 			SearchSettings searchSettings) {
-		int pos = 0;
 		int line = 0;
 		int lastPos = 0;
 		int lastLineOccurred = -1;
@@ -47,12 +56,12 @@ public class ResourceIndex {
 		try {
 			content = resNode.getContent();
 		} catch (Exception e) {
-			e.printStackTrace();
+			LOG.error("Error load resource node content", e);
 			return;
 		}
 		do {
 			searchSettings.setStartPos(lastPos);
-			pos = searchSettings.find(content);
+			int pos = searchSettings.find(content);
 			if (pos > -1) {
 				line += countLinesByPos(content, pos, lastPos);
 				lastPos = pos + searchStrLen;
@@ -100,7 +109,7 @@ public class ResourceIndex {
 		resNodes.clear();
 	}
 
-	private void traverseTree(TreeNode root, ZipFile zip) {
+	private void traverseTree(TreeNode root, @Nullable ZipFile zip) {
 		for (int i = 0; i < root.getChildCount(); i++) {
 			TreeNode node = root.getChildAt(i);
 			if (node instanceof JResource) {
@@ -108,7 +117,7 @@ public class ResourceIndex {
 				try {
 					resNode.loadNode();
 				} catch (Exception e) {
-					e.printStackTrace();
+					LOG.error("Error load resource node: {}", resNode, e);
 					return;
 				}
 				ResourceFile resFile = resNode.getResFile();
@@ -130,6 +139,7 @@ public class ResourceIndex {
 		return anyExt || fileExts.contains(".xml");
 	}
 
+	@Nullable
 	private ZipFile getZipFile(TreeNode res) {
 		for (int i = 0; i < res.getChildCount(); i++) {
 			TreeNode node = res.getChildAt(i);
@@ -138,7 +148,7 @@ public class ResourceIndex {
 				try {
 					resNode.loadNode();
 				} catch (Exception e) {
-					e.printStackTrace();
+					LOG.error("Error load resource node: {}", resNode, e);
 					return null;
 				}
 				ResourceFile file = resNode.getResFile();
@@ -148,11 +158,14 @@ public class ResourceIndex {
 						return zip;
 					}
 				} else {
-					File zfile = file.getZipRef().getZipFile();
-					if (FileUtils.isZipFile(zfile)) {
-						try {
-							return new ZipFile(zfile);
-						} catch (IOException ignore) {
+					ResourceFile.ZipRef zipRef = file.getZipRef();
+					if (zipRef != null) {
+						File zfile = zipRef.getZipFile();
+						if (FileUtils.isZipFile(zfile)) {
+							try {
+								return new ZipFile(zfile);
+							} catch (IOException ignore) {
+							}
 						}
 					}
 				}
@@ -189,13 +202,14 @@ public class ResourceIndex {
 				} else {
 					resNodes.add(resNode);
 				}
+			} else {
+				LOG.debug("Resource index skipped because of size limit: {} res size {} bytes", resNode, size);
 			}
-
 		}
 	}
 
 	private void refreshSettings() {
-		int size = cache.getJadxSettings().getSrhResourceSkipSize() * 10240;
+		int size = cache.getJadxSettings().getSrhResourceSkipSize() * 1048576;
 		if (size != sizeLimit
 				|| !cache.getJadxSettings().getSrhResourceFileExt().equals(fileExts)) {
 			clear();
@@ -212,14 +226,10 @@ public class ResourceIndex {
 					extSet.add(ext);
 				}
 			}
-			try {
-				ZipFile zipFile = getZipFile(cache.getJRoot());
+			try (ZipFile zipFile = getZipFile(cache.getJRoot())) {
 				traverseTree(cache.getJRoot(), zipFile); // reindex
-				if (zipFile != null) {
-					zipFile.close();
-				}
 			} catch (Exception e) {
-				e.printStackTrace();
+				LOG.error("Failed to apply settings to resource index", e);
 			}
 		}
 	}

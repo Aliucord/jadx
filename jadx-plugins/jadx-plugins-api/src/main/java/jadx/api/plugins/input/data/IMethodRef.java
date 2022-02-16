@@ -1,9 +1,14 @@
 package jadx.api.plugins.input.data;
 
-import java.util.List;
+import jadx.api.plugins.input.insns.custom.ICustomPayload;
 
-public interface IMethodRef {
+public interface IMethodRef extends IMethodProto, ICustomPayload {
 
+	/**
+	 * Method unique id (will be used for caching).
+	 *
+	 * @return 0 if can't calculate good unique identifier (disable caching)
+	 */
 	int getUniqId();
 
 	/**
@@ -14,8 +19,4 @@ public interface IMethodRef {
 	String getParentClassType();
 
 	String getName();
-
-	String getReturnType();
-
-	List<String> getArgTypes();
 }

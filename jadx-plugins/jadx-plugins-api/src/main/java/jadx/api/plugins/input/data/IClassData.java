@@ -1,15 +1,15 @@
 package jadx.api.plugins.input.data;
 
 import java.util.List;
-import java.util.function.Consumer;
 
 import org.jetbrains.annotations.Nullable;
 
-import jadx.api.plugins.input.data.annotations.EncodedValue;
-import jadx.api.plugins.input.data.annotations.IAnnotation;
+import jadx.api.plugins.input.data.attributes.IJadxAttribute;
 
 public interface IClassData {
 	IClassData copy();
+
+	String getInputFileName();
 
 	String getType();
 
@@ -20,15 +20,9 @@ public interface IClassData {
 
 	List<String> getInterfacesTypes();
 
-	String getSourceFile();
+	void visitFieldsAndMethods(ISeqConsumer<IFieldData> fieldsConsumer, ISeqConsumer<IMethodData> mthConsumer);
 
-	String getInputFileName();
-
-	void visitFieldsAndMethods(Consumer<IFieldData> fieldsConsumer, Consumer<IMethodData> mthConsumer);
-
-	List<EncodedValue> getStaticFieldInitValues();
-
-	List<IAnnotation> getAnnotations();
+	List<IJadxAttribute> getAttributes();
 
 	String getDisassembledCode();
 }

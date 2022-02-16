@@ -4,16 +4,26 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.Socket;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import io.reactivex.annotations.NonNull;
 
 import jadx.core.utils.StringUtils;
 
 public class ADB {
+	private static final Logger LOG = LoggerFactory.getLogger(ADB.class);
+
 	private static final int DEFAULT_PORT = 5037;
 	private static final String DEFAULT_ADDR = "localhost";
 
@@ -133,8 +143,8 @@ public class ADB {
 		try {
 			proc.waitFor(3, TimeUnit.SECONDS); // for listening to a port, 3 sec should be more than enough.
 			proc.exitValue();
-		} catch (InterruptedException e) {
-			e.printStackTrace();
+		} catch (Exception e) {
+			LOG.error("Start server error", e);
 			proc.destroyForcibly();
 			return false;
 		}
@@ -150,10 +160,9 @@ public class ADB {
 			Socket sock = new Socket(host, port);
 			sock.close();
 			return true;
-		} catch (IOException e) {
-			e.printStackTrace();
+		} catch (Exception e) {
+			return false;
 		}
-		return false;
 	}
 
 	/**
@@ -399,8 +408,8 @@ public class ADB {
 				if (list.size() != 0) {
 					androidReleaseVer = list.get(0);
 				}
-			} catch (IOException e) {
-				e.printStackTrace();
+			} catch (Exception e) {
+				LOG.error("Failed to get android release version", e);
 				androidReleaseVer = "";
 			}
 			return androidReleaseVer;
@@ -505,8 +514,8 @@ public class ADB {
 			if (jdwpListenerSock != null) {
 				try {
 					jdwpListenerSock.close();
-				} catch (IOException e) {
-					e.printStackTrace();
+				} catch (Exception e) {
+					LOG.error("JDWP socket close failed", e);
 				}
 			}
 			this.jdwpListenerSock = null;

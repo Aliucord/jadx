@@ -2,6 +2,8 @@ package jadx.core.dex.attributes;
 
 public enum AFlag {
 	MTH_ENTER_BLOCK,
+	MTH_EXIT_BLOCK,
+
 	TRY_ENTER,
 	TRY_LEAVE,
 
@@ -25,12 +27,14 @@ public enum AFlag {
 	DONT_RENAME, // do not rename during deobfuscation
 	ADDED_TO_REGION,
 
+	EXC_TOP_SPLITTER,
+	EXC_BOTTOM_SPLITTER,
 	FINALLY_INSNS,
 
 	SKIP_FIRST_ARG,
 	SKIP_ARG, // skip argument in invoke call
+	NO_SKIP_ARGS,
 	ANONYMOUS_CONSTRUCTOR,
-	ANONYMOUS_CLASS,
 
 	THIS,
 	SUPER,
@@ -72,12 +76,16 @@ public enum AFlag {
 	INCONSISTENT_CODE, // warning about incorrect decompilation
 
 	REQUEST_IF_REGION_OPTIMIZE, // run if region visitor again
+	REQUEST_CODE_SHRINK,
 	RERUN_SSA_TRANSFORM,
+
+	METHOD_CANDIDATE_FOR_INLINE,
 
 	// Class processing flags
 	RESTART_CODEGEN, // codegen must be executed again
 	RELOAD_AT_CODEGEN_STAGE, // class can't be analyzed at 'process' stage => unload before 'codegen' stage
 	CLASS_DEEP_RELOAD, // perform deep class unload (reload) before process
+	CLASS_UNLOADED, // class was completely unloaded
 
 	DONT_UNLOAD_CLASS, // don't unload class after code generation (only for tests and debug!)
 }

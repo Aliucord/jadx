@@ -4,16 +4,44 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.Socket;
-import java.util.*;
 import java.util.AbstractMap.SimpleEntry;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Map.Entry;
-import java.util.concurrent.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import io.github.hqktech.JDWP;
 import io.github.hqktech.JDWP.ArrayReference.Length.LengthReplyData;
 import io.github.hqktech.JDWP.ByteBuffer;
-import io.github.hqktech.JDWP.Event.Composite.*;
+import io.github.hqktech.JDWP.Event.Composite.BreakpointEvent;
+import io.github.hqktech.JDWP.Event.Composite.ClassPrepareEvent;
+import io.github.hqktech.JDWP.Event.Composite.ClassUnloadEvent;
+import io.github.hqktech.JDWP.Event.Composite.EventData;
+import io.github.hqktech.JDWP.Event.Composite.ExceptionEvent;
+import io.github.hqktech.JDWP.Event.Composite.FieldAccessEvent;
+import io.github.hqktech.JDWP.Event.Composite.FieldModificationEvent;
+import io.github.hqktech.JDWP.Event.Composite.MethodEntryEvent;
+import io.github.hqktech.JDWP.Event.Composite.MethodExitEvent;
+import io.github.hqktech.JDWP.Event.Composite.MethodExitWithReturnValueEvent;
+import io.github.hqktech.JDWP.Event.Composite.MonitorContendedEnterEvent;
+import io.github.hqktech.JDWP.Event.Composite.MonitorContendedEnteredEvent;
+import io.github.hqktech.JDWP.Event.Composite.MonitorWaitEvent;
+import io.github.hqktech.JDWP.Event.Composite.MonitorWaitedEvent;
+import io.github.hqktech.JDWP.Event.Composite.SingleStepEvent;
+import io.github.hqktech.JDWP.Event.Composite.ThreadDeathEvent;
+import io.github.hqktech.JDWP.Event.Composite.ThreadStartEvent;
+import io.github.hqktech.JDWP.Event.Composite.VMDeathEvent;
+import io.github.hqktech.JDWP.Event.Composite.VMStartEvent;
 import io.github.hqktech.JDWP.EventRequest.Set.ClassMatchRequest;
 import io.github.hqktech.JDWP.EventRequest.Set.CountRequest;
 import io.github.hqktech.JDWP.EventRequest.Set.LocationOnlyRequest;
@@ -53,6 +81,7 @@ import jadx.gui.utils.ObjectPool;
 
 public class SmaliDebugger {
 
+	private static final Logger LOG = LoggerFactory.getLogger(SmaliDebugger.class);
 	private final JDWP jdwp;
 	private int localTcpPort;
 	private InputStream inputStream;
@@ -350,7 +379,7 @@ public class SmaliDebugger {
 						try {
 							resume();
 						} catch (SmaliDebuggerException e) {
-							e.printStackTrace();
+							LOG.error("Resume failed", e);
 						}
 					}
 				});
@@ -385,13 +414,13 @@ public class SmaliDebugger {
 							eventListenerMap.remove(reqID);
 						}
 					} catch (SmaliDebuggerException e) {
-						e.printStackTrace();
+						LOG.error("Method entry failed", e);
 					} finally {
 						if (!removeListener) {
 							try {
 								resume();
 							} catch (SmaliDebuggerException e) {
-								e.printStackTrace();
+								LOG.error("Resume failed", e);
 							}
 						}
 					}
@@ -665,7 +694,7 @@ public class SmaliDebugger {
 						printUnexpectedID(res.getID());
 					}
 				} catch (SmaliDebuggerException e) {
-					e.printStackTrace();
+					LOG.error("Error in debugger decoding loop", e);
 					if (!errFromCallback) { // fatal error
 						break;
 					}
@@ -696,8 +725,8 @@ public class SmaliDebugger {
 		sendCommand(buf, res -> {
 			try {
 				store.put(res);
-			} catch (InterruptedException e) {
-				e.printStackTrace();
+			} catch (Exception e) {
+				LOG.error("Command send failed", e);
 			}
 		});
 		Integer id = syncQueueID.getAndAdd(1);
@@ -732,11 +761,7 @@ public class SmaliDebugger {
 		for (JDWP.EventRequestDecoder event : data.events) {
 			EventListenerAdapter listener = eventListenerMap.get(event.getRequestID());
 			if (listener == null) {
-				try {
-					printUnexpectedID(event.getRequestID());
-				} catch (Exception e) {
-					e.printStackTrace();
-				}
+				LOG.error("Missing handler for id: {}", event.getRequestID());
 				continue;
 			}
 			if (event instanceof VMStartEvent) {

@@ -2,6 +2,9 @@ package jadx.api;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
+
+import org.jetbrains.annotations.ApiStatus;
 
 import jadx.core.dex.attributes.AType;
 import jadx.core.dex.attributes.nodes.MethodOverrideAttr;
@@ -63,13 +66,15 @@ public final class JavaMethod implements JavaNode {
 		return getDeclaringClass().getRootDecompiler().convertNodes(mth.getUseIn());
 	}
 
-	public List<JavaNode> getOverrideRelatedMethods() {
+	public List<JavaMethod> getOverrideRelatedMethods() {
 		MethodOverrideAttr ovrdAttr = mth.get(AType.METHOD_OVERRIDE);
 		if (ovrdAttr == null) {
 			return Collections.emptyList();
 		}
 		JadxDecompiler decompiler = getDeclaringClass().getRootDecompiler();
-		return decompiler.convertNodes(ovrdAttr.getRelatedMthNodes());
+		return ovrdAttr.getRelatedMthNodes().stream()
+				.map(m -> ((JavaMethod) decompiler.convertNode(m)))
+				.collect(Collectors.toList());
 	}
 
 	public boolean isConstructor() {
@@ -90,9 +95,15 @@ public final class JavaMethod implements JavaNode {
 		return mth.getDefPosition();
 	}
 
+	@Override
+	public void removeAlias() {
+		this.mth.getMethodInfo().removeAlias();
+	}
+
 	/**
 	 * Internal API. Not Stable!
 	 */
+	@ApiStatus.Internal
 	public MethodNode getMethodNode() {
 		return mth;
 	}

@@ -21,19 +21,26 @@ import jadx.api.ResourcesLoader;
 import jadx.api.impl.SimpleCodeInfo;
 import jadx.core.utils.Utils;
 import jadx.core.xmlgen.ResContainer;
+import jadx.gui.ui.TabbedPane;
+import jadx.gui.ui.codearea.CodeContentPanel;
+import jadx.gui.ui.panel.ContentPanel;
+import jadx.gui.ui.panel.ImagePanel;
 import jadx.gui.utils.NLS;
-import jadx.gui.utils.OverlayIcon;
 import jadx.gui.utils.UiUtils;
 
 public class JResource extends JLoadableNode implements Comparable<JResource> {
 	private static final long serialVersionUID = -201018424302612434L;
 
-	private static final ImageIcon ROOT_ICON = UiUtils.openIcon("cf_obj");
-	private static final ImageIcon FOLDER_ICON = UiUtils.openIcon("folder");
-	private static final ImageIcon FILE_ICON = UiUtils.openIcon("file_obj");
-	private static final ImageIcon MANIFEST_ICON = UiUtils.openIcon("template_obj");
-	private static final ImageIcon JAVA_ICON = UiUtils.openIcon("java_ovr");
-	private static final ImageIcon ERROR_ICON = UiUtils.openIcon("error_co");
+	private static final ImageIcon ROOT_ICON = UiUtils.openSvgIcon("nodes/resourcesRoot");
+	private static final ImageIcon FOLDER_ICON = UiUtils.openSvgIcon("nodes/folder");
+	private static final ImageIcon FILE_ICON = UiUtils.openSvgIcon("nodes/file_any_type");
+	private static final ImageIcon ARSC_ICON = UiUtils.openSvgIcon("nodes/resourceBundle");
+	private static final ImageIcon XML_ICON = UiUtils.openSvgIcon("nodes/xml");
+	private static final ImageIcon IMAGE_ICON = UiUtils.openSvgIcon("nodes/ImagesFileType");
+	private static final ImageIcon SO_ICON = UiUtils.openSvgIcon("nodes/binaryFile");
+	private static final ImageIcon MANIFEST_ICON = UiUtils.openSvgIcon("nodes/manifest");
+	private static final ImageIcon JAVA_ICON = UiUtils.openSvgIcon("nodes/java");
+	private static final ImageIcon UNKNOWN_ICON = UiUtils.openSvgIcon("nodes/unknown");
 
 	public enum JResType {
 		ROOT,
@@ -104,6 +111,17 @@ public class JResource extends JLoadableNode implements Comparable<JResource> {
 	public @Nullable ICodeInfo getCodeInfo() {
 		getContent();
 		return content;
+	}
+
+	@Override
+	public @Nullable ContentPanel getContentPanel(TabbedPane tabbedPane) {
+		if (resFile == null) {
+			return null;
+		}
+		if (resFile.getType() == ResourceType.IMG) {
+			return new ImagePanel(tabbedPane, this);
+		}
+		return new CodeContentPanel(tabbedPane, this);
 	}
 
 	@Override
@@ -259,16 +277,23 @@ public class JResource extends JLoadableNode implements Comparable<JResource> {
 
 			case FILE:
 				ResourceType resType = resFile.getType();
-				if (resType == ResourceType.MANIFEST) {
-					return MANIFEST_ICON;
+				switch (resType) {
+					case MANIFEST:
+						return MANIFEST_ICON;
+					case ARSC:
+						return ARSC_ICON;
+					case XML:
+						return XML_ICON;
+					case IMG:
+						return IMAGE_ICON;
+					case LIB:
+						return SO_ICON;
+					case CODE:
+						return JAVA_ICON;
+					case UNKNOWN:
+						return UNKNOWN_ICON;
 				}
-				if (resType == ResourceType.CODE) {
-					return new OverlayIcon(FILE_ICON, ERROR_ICON, JAVA_ICON);
-				}
-				if (!isSupportedForView(resType)) {
-					return new OverlayIcon(FILE_ICON, ERROR_ICON);
-				}
-				return FILE_ICON;
+				return UNKNOWN_ICON;
 		}
 		return FILE_ICON;
 	}

@@ -7,6 +7,8 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.jetbrains.annotations.Nullable;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeEach;
 
 import jadx.api.JadxInternalAccess;
 import jadx.core.dex.nodes.ClassNode;
@@ -20,6 +22,13 @@ public abstract class SmaliTest extends IntegrationTest {
 	private static final String SMALI_TESTS_PROJECT = "jadx-core";
 	private static final String SMALI_TESTS_DIR = "src/test/smali";
 	private static final String SMALI_TESTS_EXT = ".smali";
+
+	@BeforeEach
+	public void init() {
+		Assumptions.assumeFalse(USE_JAVA_INPUT, "skip smali test for java input tests");
+		super.init();
+		this.useDexInput();
+	}
 
 	protected ClassNode getClassNodeFromSmali(String file, String clsName) {
 		File smaliFile = getSmaliFile(file);
@@ -51,6 +60,10 @@ public abstract class SmaliTest extends IntegrationTest {
 
 	protected ClassNode getClassNodeFromSmaliFiles(String clsName) {
 		return searchCls(loadFromSmaliFiles(), getTestPkg() + '.' + clsName);
+	}
+
+	protected ClassNode getClassNodeFromSmaliFiles() {
+		return searchCls(loadFromSmaliFiles(), getTestPkg() + '.' + getTestName());
 	}
 
 	protected List<ClassNode> loadFromSmaliFiles() {

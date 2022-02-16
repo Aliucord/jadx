@@ -5,12 +5,15 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 import org.jetbrains.annotations.Nullable;
 
 import jadx.api.ICodeWriter;
 import jadx.api.plugins.input.insns.InsnData;
 import jadx.core.dex.attributes.AFlag;
+import jadx.core.dex.attributes.AType;
 import jadx.core.dex.attributes.nodes.LineAttrNode;
 import jadx.core.dex.instructions.InsnType;
 import jadx.core.dex.instructions.args.ArgType;
@@ -117,12 +120,7 @@ public class InsnNode extends LineAttrNode {
 		if (getArgsCount() == 0) {
 			return false;
 		}
-		for (InsnArg insnArg : arguments) {
-			if (insnArg == arg || arg.sameRegAndSVar(insnArg)) {
-				return true;
-			}
-		}
-		return false;
+		return InsnUtils.containsVar(arguments, arg);
 	}
 
 	/**
@@ -291,6 +289,74 @@ public class InsnNode extends LineAttrNode {
 	}
 
 	/**
+	 * Visit this instruction and all inner (wrapped) instructions
+	 */
+	public void visitInsns(Consumer<InsnNode> visitor) {
+		visitor.accept(this);
+		for (InsnArg arg : this.getArguments()) {
+			if (arg.isInsnWrap()) {
+				((InsnWrapArg) arg).getWrapInsn().visitInsns(visitor);
+			}
+		}
+	}
+
+	/**
+	 * Visit this instruction and all inner (wrapped) instructions
+	 * To terminate visiting return non-null value
+	 */
+	@Nullable
+	public <R> R visitInsns(Function<InsnNode, R> visitor) {
+		R result = visitor.apply(this);
+		if (result != null) {
+			return result;
+		}
+		for (InsnArg arg : this.getArguments()) {
+			if (arg.isInsnWrap()) {
+				InsnNode innerInsn = ((InsnWrapArg) arg).getWrapInsn();
+				R res = innerInsn.visitInsns(visitor);
+				if (res != null) {
+					return res;
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Visit all args recursively (including inner instructions), but excluding wrapped args
+	 */
+	public void visitArgs(Consumer<InsnArg> visitor) {
+		for (InsnArg arg : getArguments()) {
+			if (arg.isInsnWrap()) {
+				((InsnWrapArg) arg).getWrapInsn().visitArgs(visitor);
+			} else {
+				visitor.accept(arg);
+			}
+		}
+	}
+
+	/**
+	 * Visit all args recursively (including inner instructions), but excluding wrapped args.
+	 * To terminate visiting return non-null value
+	 */
+	@Nullable
+	public <R> R visitArgs(Function<InsnArg, R> visitor) {
+		for (InsnArg arg : getArguments()) {
+			R result;
+			if (arg.isInsnWrap()) {
+				InsnNode wrapInsn = ((InsnWrapArg) arg).getWrapInsn();
+				result = wrapInsn.visitArgs(visitor);
+			} else {
+				result = visitor.apply(arg);
+			}
+			if (result != null) {
+				return result;
+			}
+		}
+		return null;
+	}
+
+	/**
 	 * 'Soft' equals, don't compare arguments, only instruction specific parameters.
 	 */
 	public boolean isSame(InsnNode other) {
@@ -346,19 +412,23 @@ public class InsnNode extends LineAttrNode {
 		return copy;
 	}
 
+	public void copyAttributesFrom(InsnNode attrNode) {
+		super.copyAttributesFrom(attrNode);
+		this.addSourceLineFrom(attrNode);
+	}
+
 	/**
 	 * Make copy of InsnNode object.
-	 * <p>
+	 * <br>
 	 * NOTE: can't copy instruction with result argument
 	 * (SSA variable can't be used in two different assigns).
-	 * <p>
+	 * <br>
 	 * Prefer use next methods:
 	 * <ul>
 	 * <li>{@link #copyWithoutResult()} to explicitly state that result not needed
 	 * <li>{@link #copy(RegisterArg)} to provide new result arg
 	 * <li>{@link #copyWithNewSsaVar(MethodNode)} to make new SSA variable for result arg
 	 * </ul>
-	 * <p>
 	 */
 	public InsnNode copy() {
 		if (this.getClass() != InsnNode.class) {
@@ -444,10 +514,26 @@ public class InsnNode extends LineAttrNode {
 			case CONST_CLASS:
 			case CMP_L:
 			case CMP_G:
+			case NOP:
 				return false;
 
 			default:
 				return true;
+		}
+	}
+
+	public void inheritMetadata(InsnNode sourceInsn) {
+		if (insnType == InsnType.RETURN) {
+			this.copyLines(sourceInsn);
+			if (this.contains(AFlag.SYNTHETIC)) {
+				this.setOffset(sourceInsn.getOffset());
+				this.rewriteAttributeFrom(sourceInsn, AType.CODE_COMMENTS);
+			} else {
+				this.copyAttributeFrom(sourceInsn, AType.CODE_COMMENTS);
+			}
+		} else {
+			this.copyAttributeFrom(sourceInsn, AType.CODE_COMMENTS);
+			this.addSourceLineFrom(sourceInsn);
 		}
 	}
 

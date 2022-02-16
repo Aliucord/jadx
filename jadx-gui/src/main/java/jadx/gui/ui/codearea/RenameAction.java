@@ -2,7 +2,8 @@ package jadx.gui.ui.codearea;
 
 import java.awt.event.ActionEvent;
 
-import javax.swing.*;
+import javax.swing.AbstractAction;
+import javax.swing.KeyStroke;
 import javax.swing.event.PopupMenuEvent;
 
 import org.jetbrains.annotations.Nullable;
@@ -10,7 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import jadx.gui.treemodel.JNode;
-import jadx.gui.ui.RenameDialog;
+import jadx.gui.ui.dialog.RenameDialog;
 import jadx.gui.utils.NLS;
 import jadx.gui.utils.UiUtils;
 
@@ -25,8 +26,9 @@ public final class RenameAction extends JNodeMenuAction<JNode> {
 	public RenameAction(CodeArea codeArea) {
 		super(NLS.str("popup.rename") + " (n)", codeArea);
 		KeyStroke key = getKeyStroke(VK_N, 0);
-		codeArea.getInputMap().put(key, "trigger rename");
-		codeArea.getActionMap().put("trigger rename", new AbstractAction() {
+		String renameActionId = "trigger rename";
+		codeArea.getInputMap().put(key, renameActionId);
+		codeArea.getActionMap().put(renameActionId, new AbstractAction() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
 				node = codeArea.getNodeUnderCaret();
@@ -44,10 +46,10 @@ public final class RenameAction extends JNodeMenuAction<JNode> {
 		if (!node.canRename()) {
 			UiUtils.showMessageBox(codeArea.getMainWindow(),
 					NLS.str("msg.rename_node_failed", node.getJavaNode().getFullName()));
-			LOG.info("node can't be renamed");
+			LOG.warn("Can't rename node: {}", node);
 			return;
 		}
-		RenameDialog.rename(codeArea.getMainWindow(), node);
+		RenameDialog.rename(codeArea.getMainWindow(), codeArea.getNode(), node);
 		node = null;
 	}
 

@@ -51,6 +51,30 @@ public class AccessInfo {
 		return new AccessInfo(accFlags & VISIBILITY_FLAGS, type);
 	}
 
+	public boolean isVisibilityWeakerThan(AccessInfo otherAccInfo) {
+		int thisVis = accFlags & VISIBILITY_FLAGS;
+		int otherVis = otherAccInfo.accFlags & VISIBILITY_FLAGS;
+		if (thisVis == otherVis) {
+			return false;
+		}
+		return orderedVisibility(thisVis) < orderedVisibility(otherVis);
+	}
+
+	private static int orderedVisibility(int flag) {
+		switch (flag) {
+			case AccessFlags.PRIVATE:
+				return 1;
+			case 0: // package-private
+				return 2;
+			case AccessFlags.PROTECTED:
+				return 3;
+			case AccessFlags.PUBLIC:
+				return 4;
+			default:
+				throw new JadxRuntimeException("Unexpected visibility flag: " + flag);
+		}
+	}
+
 	public boolean isPublic() {
 		return (accFlags & AccessFlags.PUBLIC) != 0;
 	}
@@ -123,11 +147,15 @@ public class AccessInfo {
 		return (accFlags & AccessFlags.VOLATILE) != 0;
 	}
 
+	public boolean isModuleInfo() {
+		return (accFlags & AccessFlags.MODULE) != 0;
+	}
+
 	public AFType getType() {
 		return type;
 	}
 
-	public String makeString() {
+	public String makeString(boolean showHidden) {
 		StringBuilder code = new StringBuilder();
 		if (isPublic()) {
 			code.append("public ");
@@ -155,11 +183,13 @@ public class AccessInfo {
 				if (isSynchronized()) {
 					code.append("synchronized ");
 				}
-				if (isBridge()) {
-					code.append("/* bridge */ ");
-				}
-				if (Consts.DEBUG && isVarArgs()) {
-					code.append("/* varargs */ ");
+				if (showHidden) {
+					if (isBridge()) {
+						code.append("/* bridge */ ");
+					}
+					if (Consts.DEBUG && isVarArgs()) {
+						code.append("/* varargs */ ");
+					}
 				}
 				break;
 
@@ -176,17 +206,22 @@ public class AccessInfo {
 				if ((accFlags & AccessFlags.STRICT) != 0) {
 					code.append("strict ");
 				}
-				if (Consts.DEBUG) {
-					if ((accFlags & AccessFlags.SUPER) != 0) {
-						code.append("/* super */ ");
+				if (showHidden) {
+					if (isModuleInfo()) {
+						code.append("/* module-info */ ");
 					}
-					if ((accFlags & AccessFlags.ENUM) != 0) {
-						code.append("/* enum */ ");
+					if (Consts.DEBUG) {
+						if ((accFlags & AccessFlags.SUPER) != 0) {
+							code.append("/* super */ ");
+						}
+						if ((accFlags & AccessFlags.ENUM) != 0) {
+							code.append("/* enum */ ");
+						}
 					}
 				}
 				break;
 		}
-		if (isSynthetic()) {
+		if (isSynthetic() && showHidden) {
 			code.append("/* synthetic */ ");
 		}
 		return code.toString();
@@ -214,6 +249,6 @@ public class AccessInfo {
 
 	@Override
 	public String toString() {
-		return "AccessInfo: " + type + " 0x" + Integer.toHexString(accFlags) + " (" + makeString() + ')';
+		return "AccessInfo: " + type + " 0x" + Integer.toHexString(accFlags) + " (" + makeString(true) + ')';
 	}
 }

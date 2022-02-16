@@ -59,6 +59,11 @@ public class SSAVar {
 		return assign;
 	}
 
+	@Nullable
+	public InsnNode getAssignInsn() {
+		return assign.getParentInsn();
+	}
+
 	public void setAssign(@NotNull RegisterArg assign) {
 		this.assign = assign;
 	}
@@ -189,17 +194,6 @@ public class SSAVar {
 
 	public boolean isUsedInPhi() {
 		return usedInPhi != null && !usedInPhi.isEmpty();
-	}
-
-	public int getVariableUseCount() {
-		int count = useList.size();
-		if (usedInPhi == null) {
-			return count;
-		}
-		for (PhiInsn phiInsn : usedInPhi) {
-			count += phiInsn.getResult().getSVar().getUseCount();
-		}
-		return count;
 	}
 
 	public void setName(String name) {

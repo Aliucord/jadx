@@ -8,10 +8,12 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 
 import org.jetbrains.annotations.Nullable;
@@ -207,6 +209,20 @@ public class Utils {
 		return result;
 	}
 
+	public static <T, R> List<R> collectionMapNoNull(Collection<T> list, Function<T, R> mapFunc) {
+		if (list == null || list.isEmpty()) {
+			return Collections.emptyList();
+		}
+		List<R> result = new ArrayList<>(list.size());
+		for (T t : list) {
+			R r = mapFunc.apply(t);
+			if (r != null) {
+				result.add(r);
+			}
+		}
+		return result;
+	}
+
 	public static <T> boolean containsInListByRef(List<T> list, T element) {
 		if (isEmpty(list)) {
 			return false;
@@ -270,6 +286,19 @@ public class Utils {
 		return result;
 	}
 
+	public static <T> Set<T> mergeSets(Set<T> first, Set<T> second) {
+		if (isEmpty(first)) {
+			return second;
+		}
+		if (isEmpty(second)) {
+			return first;
+		}
+		Set<T> result = new HashSet<>(first.size() + second.size());
+		result.addAll(first);
+		result.addAll(second);
+		return result;
+	}
+
 	public static Map<String, String> newConstStringMap(String... parameters) {
 		int len = parameters.length;
 		if (len == 0) {
@@ -301,12 +330,35 @@ public class Utils {
 		return result;
 	}
 
+	/**
+	 * Build map from list of values with value to key mapping function
+	 * <br>
+	 * Similar to:
+	 * <br>
+	 * {@code list.stream().collect(Collectors.toMap(mapKey, Function.identity())); }
+	 */
+	public static <K, V> Map<K, V> groupBy(List<V> list, Function<V, K> mapKey) {
+		Map<K, V> map = new HashMap<>(list.size());
+		for (V v : list) {
+			map.put(mapKey.apply(v), v);
+		}
+		return map;
+	}
+
 	@Nullable
 	public static <T> T getOne(@Nullable List<T> list) {
 		if (list == null || list.size() != 1) {
 			return null;
 		}
 		return list.get(0);
+	}
+
+	@Nullable
+	public static <T> T getOne(@Nullable Collection<T> collection) {
+		if (collection == null || collection.size() != 1) {
+			return null;
+		}
+		return collection.iterator().next();
 	}
 
 	@Nullable

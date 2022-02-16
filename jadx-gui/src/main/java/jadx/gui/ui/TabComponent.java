@@ -1,25 +1,34 @@
 package jadx.gui.ui;
 
-import java.awt.*;
+import java.awt.FlowLayout;
+import java.awt.Font;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import javax.swing.*;
+import javax.swing.BorderFactory;
+import javax.swing.ImageIcon;
+import javax.swing.JButton;
+import javax.swing.JLabel;
+import javax.swing.JMenuItem;
+import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
+import javax.swing.SwingUtilities;
 import javax.swing.plaf.basic.BasicButtonUI;
 
 import jadx.gui.treemodel.JClass;
 import jadx.gui.treemodel.JNode;
+import jadx.gui.ui.panel.ContentPanel;
 import jadx.gui.utils.NLS;
 import jadx.gui.utils.UiUtils;
 
 public class TabComponent extends JPanel {
 	private static final long serialVersionUID = -8147035487543610321L;
 
-	private static final ImageIcon ICON_CLOSE = UiUtils.openIcon("cross");
-	private static final ImageIcon ICON_CLOSE_INACTIVE = UiUtils.openIcon("cross_grayed");
+	private static final ImageIcon ICON_CLOSE = UiUtils.openSvgIcon("ui/closeHovered");
+	private static final ImageIcon ICON_CLOSE_INACTIVE = UiUtils.openSvgIcon("ui/close");
 
 	private final TabbedPane tabbedPane;
 	private final ContentPanel contentPanel;
@@ -42,9 +51,8 @@ public class TabComponent extends JPanel {
 	}
 
 	private void init() {
-		JPanel panel = this;
-		panel.setLayout(new FlowLayout(FlowLayout.CENTER, 3, 0));
-		panel.setOpaque(false);
+		setLayout(new FlowLayout(FlowLayout.LEFT, 0, 0));
+		setOpaque(false);
 
 		JNode node = contentPanel.getNode();
 		String tabTitle;
@@ -84,18 +92,18 @@ public class TabComponent extends JPanel {
 					menu.show(e.getComponent(), e.getX(), e.getY());
 				} else if (SwingUtilities.isLeftMouseButton(e)) {
 					if (tabbedPane.getSelectedComponent() != contentPanel) {
-						tabbedPane.setSelectedComponent(contentPanel);
+						tabbedPane.selectTab(contentPanel);
 					}
 				}
 			}
 		};
-		panel.addMouseListener(clickAdapter);
+		addMouseListener(clickAdapter);
 		label.addMouseListener(clickAdapter);
 		closeBtn.addMouseListener(clickAdapter);
 
-		panel.add(label);
-		panel.add(closeBtn);
-		panel.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
+		add(label);
+		add(closeBtn);
+		setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
 	}
 
 	private JPopupMenu createTabPopupMenu(final ContentPanel contentPanel) {

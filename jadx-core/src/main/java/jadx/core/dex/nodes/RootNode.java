@@ -18,11 +18,11 @@ import jadx.api.JadxArgs;
 import jadx.api.ResourceFile;
 import jadx.api.ResourceType;
 import jadx.api.ResourcesLoader;
+import jadx.api.data.ICodeData;
 import jadx.api.plugins.input.data.IClassData;
 import jadx.api.plugins.input.data.ILoadResult;
 import jadx.core.Jadx;
 import jadx.core.clsp.ClspGraph;
-import jadx.core.dex.attributes.AType;
 import jadx.core.dex.info.ClassInfo;
 import jadx.core.dex.info.ConstStorage;
 import jadx.core.dex.info.FieldInfo;
@@ -52,6 +52,7 @@ public class RootNode {
 	private final JadxArgs args;
 	private final List<IDexTreeVisitor> preDecompilePasses;
 	private final List<IDexTreeVisitor> passes;
+	private final List<ICodeDataUpdateListener> codeDataUpdateListeners = new ArrayList<>();
 
 	private final ErrorsCounter errorsCounter = new ErrorsCounter();
 	private final StringUtils stringUtils;
@@ -97,24 +98,19 @@ public class RootNode {
 		}
 		if (classes.size() != clsMap.size()) {
 			// class name duplication detected
-			classes.stream().collect(Collectors.groupingBy(ClassNode::getClassInfo))
-					.entrySet().stream()
-					.filter(entry -> entry.getValue().size() > 1)
-					.forEach(entry -> {
-						LOG.warn("Found duplicated class: {}, count: {}. Only one will be loaded!", entry.getKey(),
-								entry.getValue().size());
-						entry.getValue().forEach(cls -> cls.addAttr(AType.COMMENTS, "WARNING: Classes with same name are omitted"));
-					});
+			markDuplicatedClasses(classes);
 		}
 		classes = new ArrayList<>(clsMap.values());
-		// sort classes by name, expect top classes before inner
-		classes.sort(Comparator.comparing(ClassNode::getFullName));
-		initInnerClasses();
 
 		// print stats for loaded classes
 		int mthCount = classes.stream().mapToInt(c -> c.getMethods().size()).sum();
 		int insnsCount = classes.stream().flatMap(c -> c.getMethods().stream()).mapToInt(MethodNode::getInsnsCount).sum();
 		LOG.info("Loaded classes: {}, methods: {}, instructions: {}", classes.size(), mthCount, insnsCount);
+
+		// sort classes by name, expect top classes before inner
+		classes.sort(Comparator.comparing(ClassNode::getFullName));
+		// move inner classes
+		initInnerClasses();
 	}
 
 	private void addDummyClass(IClassData classData, Exception exc) {
@@ -133,6 +129,27 @@ public class RootNode {
 		}
 		ClassNode clsNode = ClassNode.addSyntheticClass(this, name, classData.getAccessFlags());
 		ErrorsCounter.error(clsNode, "Load error", exc);
+	}
+
+	private static void markDuplicatedClasses(List<ClassNode> classes) {
+		classes.stream()
+				.collect(Collectors.groupingBy(ClassNode::getClassInfo))
+				.entrySet()
+				.stream()
+				.filter(entry -> entry.getValue().size() > 1)
+				.forEach(entry -> {
+					List<String> sources = Utils.collectionMap(entry.getValue(), ClassNode::getInputFileName);
+					LOG.warn("Found duplicated class: {}, count: {}. Only one will be loaded!\n  {}",
+							entry.getKey(), entry.getValue().size(), String.join("\n  ", sources));
+					entry.getValue().forEach(cls -> {
+						String thisSource = cls.getInputFileName();
+						String otherSourceStr = sources.stream()
+								.filter(s -> !s.equals(thisSource))
+								.sorted()
+								.collect(Collectors.joining("\n  "));
+						cls.addWarnComment("Classes with same name are omitted:\n  " + otherSourceStr + '\n');
+					});
+				});
 	}
 
 	public void addClassNode(ClassNode clsNode) {
@@ -179,6 +196,7 @@ public class RootNode {
 				ClspGraph newClsp = new ClspGraph(this);
 				newClsp.load();
 				newClsp.addApp(classes);
+				newClsp.initCache();
 				this.clsp = newClsp;
 			}
 		} catch (Exception e) {
@@ -240,20 +258,25 @@ public class RootNode {
 				innerCls.getClassInfo().updateNames(this);
 			}
 		}
+		classes.forEach(ClassNode::updateParentClass);
 	}
 
 	public void runPreDecompileStage() {
+		boolean debugEnabled = LOG.isDebugEnabled();
 		for (IDexTreeVisitor pass : preDecompilePasses) {
-			long start = System.currentTimeMillis();
+			long start = debugEnabled ? System.currentTimeMillis() : 0;
 			try {
 				pass.init(this);
 			} catch (Exception e) {
 				LOG.error("Visitor init failed: {}", pass.getClass().getSimpleName(), e);
 			}
 			for (ClassNode cls : classes) {
+				if (cls.isInner()) {
+					continue;
+				}
 				DepthTraversal.visit(pass, cls);
 			}
-			if (LOG.isDebugEnabled()) {
+			if (debugEnabled) {
 				LOG.debug("{} time: {}ms", pass.getClass().getSimpleName(), System.currentTimeMillis() - start);
 			}
 		}
@@ -311,6 +334,12 @@ public class RootNode {
 		return resolveClass(clsInfo);
 	}
 
+	/**
+	 * Searches for ClassNode by its full name (original or alias name)
+	 * <br>
+	 * Warning: This method has a runtime of O(n) (n = number of classes).
+	 * If you need to call it more than once consider {@link #buildFullAliasClassCache()} instead
+	 */
 	@Nullable
 	public ClassNode searchClassByFullAlias(String fullName) {
 		for (ClassNode cls : classes) {
@@ -321,6 +350,20 @@ public class RootNode {
 			}
 		}
 		return null;
+	}
+
+	public Map<String, ClassNode> buildFullAliasClassCache() {
+		Map<String, ClassNode> classNameCache = new HashMap<>(classes.size());
+		for (ClassNode cls : classes) {
+			ClassInfo classInfo = cls.getClassInfo();
+			String fullName = classInfo.getFullName();
+			String alias = classInfo.getAliasFullName();
+			classNameCache.put(fullName, cls);
+			if (alias != null && !fullName.equals(alias)) {
+				classNameCache.put(alias, cls);
+			}
+		}
+		return classNameCache;
 	}
 
 	public List<ClassNode> searchClassByShortName(String shortName) {
@@ -335,15 +378,6 @@ public class RootNode {
 
 	@Nullable
 	public MethodNode resolveMethod(@NotNull MethodInfo mth) {
-		ClassNode cls = resolveClass(mth.getDeclClass());
-		if (cls != null) {
-			return cls.searchMethod(mth);
-		}
-		return null;
-	}
-
-	@Nullable
-	public MethodNode deepResolveMethod(@NotNull MethodInfo mth) {
 		ClassNode cls = resolveClass(mth.getDeclClass());
 		if (cls == null) {
 			return null;
@@ -388,17 +422,12 @@ public class RootNode {
 	@Nullable
 	public FieldNode resolveField(FieldInfo field) {
 		ClassNode cls = resolveClass(field.getDeclClass());
-		if (cls != null) {
-			return cls.searchField(field);
-		}
-		return null;
-	}
-
-	@Nullable
-	public FieldNode deepResolveField(@NotNull FieldInfo field) {
-		ClassNode cls = resolveClass(field.getDeclClass());
 		if (cls == null) {
 			return null;
+		}
+		FieldNode fieldNode = cls.searchField(field);
+		if (fieldNode != null) {
+			return fieldNode;
 		}
 		return deepResolveField(cls, field);
 	}
@@ -448,6 +477,15 @@ public class RootNode {
 	public ICodeWriter makeCodeWriter() {
 		JadxArgs jadxArgs = this.args;
 		return jadxArgs.getCodeWriterProvider().apply(jadxArgs);
+	}
+
+	public void registerCodeDataUpdateListener(ICodeDataUpdateListener listener) {
+		this.codeDataUpdateListeners.add(listener);
+	}
+
+	public void notifyCodeDataListeners() {
+		ICodeData codeData = args.getCodeData();
+		codeDataUpdateListeners.forEach(l -> l.updated(codeData));
 	}
 
 	public ClspGraph getClsp() {

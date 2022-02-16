@@ -17,7 +17,7 @@ import jadx.core.dex.instructions.args.ArgType;
 import jadx.core.dex.instructions.args.RegisterArg;
 import jadx.core.dex.nodes.InsnNode;
 import jadx.core.dex.nodes.MethodNode;
-import jadx.core.dex.visitors.blocksmaker.BlockSplitter;
+import jadx.core.dex.visitors.blocks.BlockSplitter;
 import jadx.core.utils.InsnUtils;
 import jadx.core.utils.exceptions.JadxException;
 import jadx.core.utils.exceptions.JadxRuntimeException;
@@ -49,17 +49,12 @@ public class ProcessInstructionsVisitor extends AbstractVisitor {
 			switch (insn.getType()) {
 				case SWITCH:
 					SwitchInsn sw = (SwitchInsn) insn;
-					// default case
-					int nextInsnOffset = getNextInsnOffset(insnByOffset, offset);
-					if (nextInsnOffset != -1) {
-						addJump(mth, insnByOffset, offset, nextInsnOffset);
+					if (sw.needData()) {
+						attachSwitchData(insnByOffset, offset, sw);
 					}
-					int dataTarget = sw.getDataTarget();
-					InsnNode switchDataInsn = getInsnAtOffset(insnByOffset, dataTarget);
-					if (switchDataInsn != null && switchDataInsn.getType() == InsnType.SWITCH_DATA) {
-						sw.attachSwitchData((SwitchData) switchDataInsn, nextInsnOffset);
-					} else {
-						throw new JadxRuntimeException("Payload for fill-array not found at " + InsnUtils.formatOffset(dataTarget));
+					int defCaseOffset = sw.getDefaultCaseOffset();
+					if (defCaseOffset != -1) {
+						addJump(mth, insnByOffset, offset, defCaseOffset);
 					}
 					for (int target : sw.getTargets()) {
 						addJump(mth, insnByOffset, offset, target);
@@ -79,8 +74,17 @@ public class ProcessInstructionsVisitor extends AbstractVisitor {
 					break;
 
 				case INVOKE:
-					ArgType retType = ((BaseInvokeNode) insn).getCallMth().getReturnType();
-					mergeMoveResult(insnByOffset, offset, insn, retType);
+					if (insn.getResult() == null) {
+						ArgType retType = ((BaseInvokeNode) insn).getCallMth().getReturnType();
+						mergeMoveResult(insnByOffset, offset, insn, retType);
+					}
+					break;
+
+				case STR_CONCAT:
+					// invoke-custom with string concatenation translated directly to STR_CONCAT, merge next move-result
+					if (insn.getResult() == null) {
+						mergeMoveResult(insnByOffset, offset, insn, ArgType.STRING);
+					}
 					break;
 
 				case FILLED_NEW_ARRAY:
@@ -94,6 +98,7 @@ public class ProcessInstructionsVisitor extends AbstractVisitor {
 					InsnNode arrDataInsn = getInsnAtOffset(insnByOffset, target);
 					if (arrDataInsn != null && arrDataInsn.getType() == InsnType.FILL_ARRAY_DATA) {
 						fillArrayInsn.setArrayData((FillArrayData) arrDataInsn);
+						removeInsn(insnByOffset, arrDataInsn);
 					} else {
 						throw new JadxRuntimeException("Payload for fill-array not found at " + InsnUtils.formatOffset(target));
 					}
@@ -102,6 +107,20 @@ public class ProcessInstructionsVisitor extends AbstractVisitor {
 				default:
 					break;
 			}
+		}
+	}
+
+	private static void attachSwitchData(InsnNode[] insnByOffset, int offset, SwitchInsn sw) {
+		int nextInsnOffset = getNextInsnOffset(insnByOffset, offset);
+		int dataTarget = sw.getDataTarget();
+		InsnNode switchDataInsn = getInsnAtOffset(insnByOffset, dataTarget);
+		if (switchDataInsn != null && switchDataInsn.getType() == InsnType.SWITCH_DATA) {
+			SwitchData data = (SwitchData) switchDataInsn;
+			data.fixTargets(offset);
+			sw.attachSwitchData(data, nextInsnOffset);
+			removeInsn(insnByOffset, switchDataInsn);
+		} else {
+			throw new JadxRuntimeException("Payload for switch not found at " + InsnUtils.formatOffset(dataTarget));
 		}
 	}
 
@@ -117,7 +136,7 @@ public class ProcessInstructionsVisitor extends AbstractVisitor {
 		RegisterArg moveRes = nextInsn.getResult();
 		insn.setResult(moveRes.duplicate(resType));
 		insn.copyAttributesFrom(nextInsn);
-		insnByOffset[nextInsnOffset] = null;
+		removeInsn(insnByOffset, nextInsn);
 	}
 
 	private static void addJump(MethodNode mth, InsnNode[] insnByOffset, int offset, int target) {
@@ -149,5 +168,9 @@ public class ProcessInstructionsVisitor extends AbstractVisitor {
 			}
 		}
 		return null;
+	}
+
+	private static void removeInsn(InsnNode[] insnByOffset, InsnNode insn) {
+		insnByOffset[insn.getOffset()] = null;
 	}
 }

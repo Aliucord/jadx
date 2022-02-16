@@ -34,13 +34,17 @@ public final class ProcessClass {
 				if (cls.contains(AFlag.CLASS_DEEP_RELOAD)) {
 					cls.remove(AFlag.CLASS_DEEP_RELOAD);
 					cls.deepUnload();
+					cls.add(AFlag.CLASS_UNLOADED);
+				}
+				if (cls.contains(AFlag.CLASS_UNLOADED)) {
 					cls.root().runPreDecompileStageForClass(cls);
+					cls.remove(AFlag.CLASS_UNLOADED);
+				}
+				if (cls.getState() == GENERATED_AND_UNLOADED) {
+					// force loading code again
+					cls.setState(NOT_LOADED);
 				}
 				if (codegen) {
-					if (cls.getState() == GENERATED_AND_UNLOADED) {
-						// allow to run code generation again
-						cls.setState(NOT_LOADED);
-					}
 					cls.setLoadStage(LoadStage.CODEGEN_STAGE);
 					if (cls.contains(AFlag.RELOAD_AT_CODEGEN_STAGE)) {
 						cls.remove(AFlag.RELOAD_AT_CODEGEN_STAGE);
@@ -67,10 +71,14 @@ public final class ProcessClass {
 					}
 					return code;
 				}
+				return null;
 			} catch (Throwable e) {
+				if (codegen) {
+					throw e;
+				}
 				cls.addError("Class process error: " + e.getClass().getSimpleName(), e);
+				return null;
 			}
-			return null;
 		}
 	}
 
@@ -83,6 +91,12 @@ public final class ProcessClass {
 		try {
 			for (ClassNode depCls : cls.getDependencies()) {
 				process(depCls, false);
+			}
+			if (!cls.getCodegenDeps().isEmpty()) {
+				process(cls, false);
+				for (ClassNode codegenDep : cls.getCodegenDeps()) {
+					process(codegenDep, false);
+				}
 			}
 			ICodeInfo code = process(cls, true);
 			if (code == null) {

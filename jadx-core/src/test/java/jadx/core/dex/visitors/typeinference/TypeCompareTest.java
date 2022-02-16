@@ -63,9 +63,14 @@ public class TypeCompareTest {
 	public void comparePrimitives() {
 		check(INT, UNKNOWN_OBJECT, TypeCompareEnum.CONFLICT);
 		check(INT, OBJECT, TypeCompareEnum.CONFLICT);
-		check(INT, BOOLEAN, TypeCompareEnum.CONFLICT);
+
 		check(INT, CHAR, TypeCompareEnum.WIDER);
 		check(INT, SHORT, TypeCompareEnum.WIDER);
+
+		check(BOOLEAN, INT, TypeCompareEnum.CONFLICT);
+		check(BOOLEAN, CHAR, TypeCompareEnum.CONFLICT);
+		check(CHAR, BYTE, TypeCompareEnum.CONFLICT);
+		check(CHAR, SHORT, TypeCompareEnum.CONFLICT);
 
 		firstIsNarrow(CHAR, NARROW_INTEGRAL);
 		firstIsNarrow(array(CHAR), UNKNOWN_OBJECT);
@@ -138,7 +143,7 @@ public class TypeCompareTest {
 	public void compareGenericTypes() {
 		ArgType vType = genericType("V");
 		check(vType, OBJECT, TypeCompareEnum.NARROW);
-		check(vType, STRING, TypeCompareEnum.NARROW);
+		check(vType, STRING, TypeCompareEnum.CONFLICT);
 
 		ArgType rType = genericType("R");
 		check(vType, rType, TypeCompareEnum.CONFLICT);

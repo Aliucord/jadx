@@ -9,6 +9,7 @@ import jadx.core.dex.instructions.args.InsnWrapArg;
 import jadx.core.dex.nodes.ClassNode;
 import jadx.core.dex.nodes.InsnNode;
 import jadx.core.dex.nodes.MethodNode;
+import jadx.core.utils.BlockUtils;
 import jadx.tests.api.IntegrationTest;
 
 import static org.hamcrest.CoreMatchers.containsString;
@@ -32,14 +33,13 @@ public class TestDuplicateCast extends IntegrationTest {
 
 	@Test
 	public void test() {
-		dontUnloadClass();
 		ClassNode cls = getClassNode(TestCls.class);
 		MethodNode mth = getMethod(cls, "method");
 
 		String code = cls.getCode().toString();
 		assertThat(code, containsString("return (int[]) o;"));
 
-		List<InsnNode> insns = mth.getBasicBlocks().get(1).getInstructions();
+		List<InsnNode> insns = BlockUtils.collectAllInsns(mth.getBasicBlocks());
 		assertThat(insns, hasSize(1));
 		InsnNode insnNode = insns.get(0);
 		assertThat(insnNode.getType(), is(InsnType.RETURN));

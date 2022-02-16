@@ -3,10 +3,6 @@ package jadx.core.dex.visitors.debuginfo;
 import java.util.List;
 import java.util.Map;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import jadx.api.ICodeWriter;
 import jadx.api.plugins.input.data.IDebugInfo;
 import jadx.api.plugins.input.data.ILocalVar;
 import jadx.core.dex.attributes.nodes.LocalVarsDebugInfoAttr;
@@ -19,10 +15,8 @@ import jadx.core.dex.nodes.MethodNode;
 import jadx.core.dex.nodes.parser.SignatureParser;
 import jadx.core.dex.visitors.AbstractVisitor;
 import jadx.core.dex.visitors.JadxVisitor;
-import jadx.core.dex.visitors.blocksmaker.BlockSplitter;
+import jadx.core.dex.visitors.blocks.BlockSplitter;
 import jadx.core.dex.visitors.ssa.SSATransform;
-import jadx.core.utils.ErrorsCounter;
-import jadx.core.utils.Utils;
 import jadx.core.utils.exceptions.JadxException;
 
 @JadxVisitor(
@@ -35,8 +29,6 @@ import jadx.core.utils.exceptions.JadxException;
 )
 public class DebugInfoAttachVisitor extends AbstractVisitor {
 
-	private static final Logger LOG = LoggerFactory.getLogger(DebugInfoAttachVisitor.class);
-
 	@Override
 	public void visit(MethodNode mth) throws JadxException {
 		try {
@@ -45,26 +37,30 @@ public class DebugInfoAttachVisitor extends AbstractVisitor {
 				processDebugInfo(mth, debugInfo);
 			}
 		} catch (Exception e) {
-			mth.addComment("JADX WARNING: Error to parse debug info: "
-					+ ErrorsCounter.formatMsg(mth, e.getMessage())
-					+ ICodeWriter.NL + Utils.getStackTrace(e));
+			mth.addWarnComment("Failed to parse debug info", e);
 		}
 	}
 
 	private void processDebugInfo(MethodNode mth, IDebugInfo debugInfo) {
 		InsnNode[] insnArr = mth.getInstructions();
-		attachSourceLines(debugInfo.getSourceLineMapping(), insnArr);
+		attachSourceLines(mth, debugInfo.getSourceLineMapping(), insnArr);
 		attachDebugInfo(mth, debugInfo.getLocalVars(), insnArr);
 		setMethodSourceLine(mth, insnArr);
 	}
 
-	private void attachSourceLines(Map<Integer, Integer> lineMapping, InsnNode[] insnArr) {
-		for (InsnNode insn : insnArr) {
-			if (insn != null) {
-				Integer sourceLine = lineMapping.get(insn.getOffset());
-				if (sourceLine != null) {
-					insn.setSourceLine(sourceLine);
+	private void attachSourceLines(MethodNode mth, Map<Integer, Integer> lineMapping, InsnNode[] insnArr) {
+		if (lineMapping.isEmpty()) {
+			return;
+		}
+		for (Map.Entry<Integer, Integer> entry : lineMapping.entrySet()) {
+			try {
+				Integer offset = entry.getKey();
+				InsnNode insn = insnArr[offset];
+				if (insn != null) {
+					insn.setSourceLine(entry.getValue());
 				}
+			} catch (Exception e) {
+				mth.addWarnComment("Error attach source line", e);
 			}
 		}
 	}
@@ -80,7 +76,7 @@ public class DebugInfoAttachVisitor extends AbstractVisitor {
 
 			ArgType type = getVarType(mth, var);
 			RegDebugInfoAttr debugInfoAttr = new RegDebugInfoAttr(type, var.getName());
-			if (start < 0) {
+			if (start <= 0) {
 				// attach to method arguments
 				RegisterArg thisArg = mth.getThisArg();
 				if (thisArg != null) {
@@ -93,25 +89,33 @@ public class DebugInfoAttachVisitor extends AbstractVisitor {
 			}
 			for (int i = start; i <= end; i++) {
 				InsnNode insn = insnArr[i];
-				if (insn != null) {
-					attachDebugInfo(insn.getResult(), debugInfoAttr, regNum);
-					for (InsnArg arg : insn.getArguments()) {
-						attachDebugInfo(arg, debugInfoAttr, regNum);
-					}
+				if (insn == null) {
+					continue;
 				}
+				int count = 0;
+				for (InsnArg arg : insn.getArguments()) {
+					count += attachDebugInfo(arg, debugInfoAttr, regNum);
+				}
+				if (count != 0) {
+					// don't apply same info for result if applied to args
+					continue;
+				}
+				attachDebugInfo(insn.getResult(), debugInfoAttr, regNum);
 			}
 		}
 
 		mth.addAttr(new LocalVarsDebugInfoAttr(localVars));
 	}
 
-	private void attachDebugInfo(InsnArg arg, RegDebugInfoAttr debugInfoAttr, int regNum) {
+	private int attachDebugInfo(InsnArg arg, RegDebugInfoAttr debugInfoAttr, int regNum) {
 		if (arg instanceof RegisterArg) {
 			RegisterArg reg = (RegisterArg) arg;
 			if (regNum == reg.getRegNum()) {
 				reg.addAttr(debugInfoAttr);
+				return 1;
 			}
 		}
+		return 0;
 	}
 
 	public static ArgType getVarType(MethodNode mth, ILocalVar var) {
@@ -123,21 +127,21 @@ public class DebugInfoAttachVisitor extends AbstractVisitor {
 		try {
 			ArgType gType = new SignatureParser(sign).consumeType();
 			ArgType expandedType = mth.root().getTypeUtils().expandTypeVariables(mth, gType);
-			if (checkSignature(type, expandedType)) {
+			if (checkSignature(mth, type, expandedType)) {
 				return expandedType;
 			}
 		} catch (Exception e) {
-			LOG.error("Can't parse signature for local variable: {}", sign, e);
+			mth.addWarnComment("Can't parse signature for local variable: " + sign, e);
 		}
 		return type;
 	}
 
-	private static boolean checkSignature(ArgType type, ArgType gType) {
+	private static boolean checkSignature(MethodNode mth, ArgType type, ArgType gType) {
 		boolean apply;
 		ArgType el = gType.getArrayRootElement();
 		if (el.isGeneric()) {
 			if (!type.getArrayRootElement().getObject().equals(el.getObject())) {
-				LOG.warn("Generic type in debug info not equals: {} != {}", type, gType);
+				mth.addWarnComment("Generic types in debug info not equals: " + type + " != " + gType);
 			}
 			apply = true;
 		} else {

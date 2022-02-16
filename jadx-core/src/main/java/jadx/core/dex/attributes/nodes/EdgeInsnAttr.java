@@ -2,17 +2,22 @@ package jadx.core.dex.attributes.nodes;
 
 import java.util.Objects;
 
+import jadx.api.plugins.input.data.attributes.IJadxAttribute;
 import jadx.core.dex.attributes.AType;
 import jadx.core.dex.attributes.AttrList;
-import jadx.core.dex.attributes.IAttribute;
 import jadx.core.dex.nodes.BlockNode;
+import jadx.core.dex.nodes.Edge;
 import jadx.core.dex.nodes.InsnNode;
 
-public class EdgeInsnAttr implements IAttribute {
+public class EdgeInsnAttr implements IJadxAttribute {
 
 	private final BlockNode start;
 	private final BlockNode end;
 	private final InsnNode insn;
+
+	public static void addEdgeInsn(Edge edge, InsnNode insn) {
+		addEdgeInsn(edge.getSource(), edge.getTarget(), insn);
+	}
 
 	public static void addEdgeInsn(BlockNode start, BlockNode end, InsnNode insn) {
 		EdgeInsnAttr edgeInsnAttr = new EdgeInsnAttr(start, end, insn);
@@ -24,14 +29,14 @@ public class EdgeInsnAttr implements IAttribute {
 		}
 	}
 
-	public EdgeInsnAttr(BlockNode start, BlockNode end, InsnNode insn) {
+	private EdgeInsnAttr(BlockNode start, BlockNode end, InsnNode insn) {
 		this.start = start;
 		this.end = end;
 		this.insn = insn;
 	}
 
 	@Override
-	public AType<AttrList<EdgeInsnAttr>> getType() {
+	public AType<AttrList<EdgeInsnAttr>> getAttrType() {
 		return AType.EDGE_INSN;
 	}
 

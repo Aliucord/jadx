@@ -38,6 +38,7 @@ import jadx.core.dex.nodes.MethodNode;
 import jadx.core.dex.nodes.RootNode;
 import jadx.core.dex.regions.conditions.IfCondition;
 import jadx.core.dex.visitors.shrink.CodeShrinkVisitor;
+import jadx.core.dex.visitors.typeinference.TypeCompareEnum;
 import jadx.core.utils.BlockUtils;
 import jadx.core.utils.InsnList;
 import jadx.core.utils.InsnRemover;
@@ -82,7 +83,7 @@ public class SimplifyVisitor extends AbstractVisitor {
 		for (int i = 0; i < list.size(); i++) {
 			InsnNode insn = list.get(i);
 			int insnCount = list.size();
-			InsnNode modInsn = simplifyInsn(mth, insn);
+			InsnNode modInsn = simplifyInsn(mth, insn, null);
 			if (modInsn != null) {
 				modInsn.rebindArgs();
 				if (i < list.size() && list.get(i) == insn) {
@@ -110,7 +111,7 @@ public class SimplifyVisitor extends AbstractVisitor {
 		for (InsnArg arg : insn.getArguments()) {
 			if (arg.isInsnWrap()) {
 				InsnNode wrapInsn = ((InsnWrapArg) arg).getWrapInsn();
-				InsnNode replaceInsn = simplifyInsn(mth, wrapInsn);
+				InsnNode replaceInsn = simplifyInsn(mth, wrapInsn, insn);
 				if (replaceInsn != null) {
 					arg.wrapInstruction(mth, replaceInsn);
 					InsnRemover.unbindInsn(mth, wrapInsn);
@@ -123,7 +124,7 @@ public class SimplifyVisitor extends AbstractVisitor {
 		}
 	}
 
-	private InsnNode simplifyInsn(MethodNode mth, InsnNode insn) {
+	private InsnNode simplifyInsn(MethodNode mth, InsnNode insn, @Nullable InsnNode parentInsn) {
 		if (insn.contains(AFlag.DONT_GENERATE)) {
 			return null;
 		}
@@ -133,10 +134,10 @@ public class SimplifyVisitor extends AbstractVisitor {
 				return simplifyArith((ArithNode) insn);
 
 			case IF:
-				simplifyIf((IfNode) insn);
+				simplifyIf(mth, (IfNode) insn);
 				break;
 			case TERNARY:
-				simplifyTernary((TernaryInsn) insn);
+				simplifyTernary(mth, (TernaryInsn) insn);
 				break;
 
 			case INVOKE:
@@ -146,8 +147,9 @@ public class SimplifyVisitor extends AbstractVisitor {
 			case SPUT:
 				return convertFieldArith(mth, insn);
 
+			case CAST:
 			case CHECK_CAST:
-				return processCast(mth, (IndexInsnNode) insn);
+				return processCast(mth, (IndexInsnNode) insn, parentInsn);
 
 			case MOVE:
 				InsnArg firstArg = insn.getArg(0);
@@ -186,7 +188,7 @@ public class SimplifyVisitor extends AbstractVisitor {
 							return null;
 						}
 						arr[i] = (byte) ((LiteralArg) arrArg).getLiteral();
-						if (NameMapper.isPrintableChar(arr[i])) {
+						if (NameMapper.isPrintableChar((char) arr[i])) {
 							printable++;
 						}
 					}
@@ -212,7 +214,7 @@ public class SimplifyVisitor extends AbstractVisitor {
 		return null;
 	}
 
-	private static InsnNode processCast(MethodNode mth, IndexInsnNode castInsn) {
+	private static InsnNode processCast(MethodNode mth, IndexInsnNode castInsn, @Nullable InsnNode parentInsn) {
 		if (castInsn.contains(AFlag.EXPLICIT_CAST)) {
 			return null;
 		}
@@ -229,7 +231,8 @@ public class SimplifyVisitor extends AbstractVisitor {
 
 		ArgType castToType = (ArgType) castInsn.getIndex();
 		if (!ArgType.isCastNeeded(mth.root(), argType, castToType)
-				|| isCastDuplicate(castInsn)) {
+				|| isCastDuplicate(castInsn)
+				|| shadowedByOuterCast(mth.root(), castToType, parentInsn)) {
 			InsnNode insnNode = new InsnNode(InsnType.MOVE, 1);
 			insnNode.setOffset(castInsn.getOffset());
 			insnNode.setResult(castInsn.getResult());
@@ -254,16 +257,26 @@ public class SimplifyVisitor extends AbstractVisitor {
 		return false;
 	}
 
+	private static boolean shadowedByOuterCast(RootNode root, ArgType castType, @Nullable InsnNode parentInsn) {
+		if (parentInsn != null && parentInsn.getType() == InsnType.CAST) {
+			ArgType parentCastType = (ArgType) ((IndexInsnNode) parentInsn).getIndex();
+			TypeCompareEnum result = root.getTypeCompare().compareTypes(parentCastType, castType);
+			return result.isNarrow();
+		}
+		return false;
+	}
+
 	/**
 	 * Simplify 'cmp' instruction in if condition
 	 */
-	private static void simplifyIf(IfNode insn) {
+	private static void simplifyIf(MethodNode mth, IfNode insn) {
 		InsnArg f = insn.getArg(0);
 		if (f.isInsnWrap()) {
 			InsnNode wi = ((InsnWrapArg) f).getWrapInsn();
 			if (wi.getType() == InsnType.CMP_L || wi.getType() == InsnType.CMP_G) {
 				if (insn.getArg(1).isZeroLiteral()) {
-					insn.changeCondition(insn.getOp(), wi.getArg(0), wi.getArg(1));
+					insn.changeCondition(insn.getOp(), wi.getArg(0).duplicate(), wi.getArg(1).duplicate());
+					InsnRemover.unbindInsn(mth, wi);
 				} else {
 					LOG.warn("TODO: cmp {}", insn);
 				}
@@ -274,10 +287,10 @@ public class SimplifyVisitor extends AbstractVisitor {
 	/**
 	 * Simplify condition in ternary operation
 	 */
-	private static void simplifyTernary(TernaryInsn insn) {
+	private static void simplifyTernary(MethodNode mth, TernaryInsn insn) {
 		IfCondition condition = insn.getCondition();
 		if (condition.isCompare()) {
-			simplifyIf(condition.getCompare().getInsn());
+			simplifyIf(mth, condition.getCompare().getInsn());
 		} else {
 			insn.simplifyCondition();
 		}
@@ -406,7 +419,7 @@ public class SimplifyVisitor extends AbstractVisitor {
 			checkResult(mth, concatInsn);
 			return concatInsn;
 		} catch (Exception e) {
-			LOG.warn("Can't convert string concatenation: {} insn: {}", mth, toStrInsn, e);
+			mth.addWarnComment("String concatenation convert failed", e);
 		}
 		return null;
 	}
@@ -531,32 +544,44 @@ public class SimplifyVisitor extends AbstractVisitor {
 		if (arith.getArgsCount() != 2) {
 			return null;
 		}
-		InsnArg litArg = null;
+		LiteralArg litArg = null;
 		InsnArg secondArg = arith.getArg(1);
 		if (secondArg.isInsnWrap()) {
 			InsnNode wr = ((InsnWrapArg) secondArg).getWrapInsn();
 			if (wr.getType() == InsnType.CONST) {
-				litArg = wr.getArg(0);
+				InsnArg arg = wr.getArg(0);
+				if (arg.isLiteral()) {
+					litArg = (LiteralArg) arg;
+				}
 			}
 		} else if (secondArg.isLiteral()) {
-			litArg = secondArg;
+			litArg = (LiteralArg) secondArg;
 		}
-		if (litArg != null) {
-			long lit = ((LiteralArg) litArg).getLiteral();
-			// fix 'c + (-1)' => 'c - (1)'
-			if (arith.getOp() == ArithOp.ADD && lit < 0) {
-				return new ArithNode(ArithOp.SUB,
-						arith.getResult(), arith.getArg(0),
-						InsnArg.lit(-lit, litArg.getType()));
-			}
-			InsnArg firstArg = arith.getArg(0);
-			if (arith.getOp() == ArithOp.XOR && firstArg.getType() == ArgType.BOOLEAN
-					&& (lit == 0 || lit == 1)) {
-				InsnNode node = new InsnNode(lit == 0 ? InsnType.MOVE : InsnType.NOT, 1);
-				node.setResult(arith.getResult());
-				node.addArg(firstArg);
-				return node;
-			}
+		if (litArg == null) {
+			return null;
+		}
+		switch (arith.getOp()) {
+			case ADD:
+				// fix 'c + (-1)' to 'c - (1)'
+				if (litArg.isNegative()) {
+					LiteralArg negLitArg = litArg.negate();
+					if (negLitArg != null) {
+						return new ArithNode(ArithOp.SUB, arith.getResult(), arith.getArg(0), negLitArg);
+					}
+				}
+				break;
+
+			case XOR:
+				// simplify xor on boolean
+				InsnArg firstArg = arith.getArg(0);
+				long lit = litArg.getLiteral();
+				if (firstArg.getType() == ArgType.BOOLEAN && (lit == 0 || lit == 1)) {
+					InsnNode node = new InsnNode(lit == 0 ? InsnType.MOVE : InsnType.NOT, 1);
+					node.setResult(arith.getResult());
+					node.addArg(firstArg);
+					return node;
+				}
+				break;
 		}
 		return null;
 	}

@@ -9,6 +9,8 @@ import org.jetbrains.annotations.Nullable;
 import jadx.api.ICodeInfo;
 import jadx.api.JadxDecompiler;
 import jadx.api.JavaNode;
+import jadx.gui.ui.TabbedPane;
+import jadx.gui.ui.panel.ContentPanel;
 
 public abstract class JNode extends DefaultMutableTreeNode {
 
@@ -28,6 +30,11 @@ public abstract class JNode extends DefaultMutableTreeNode {
 	}
 
 	public String getContent() {
+		return null;
+	}
+
+	@Nullable
+	public ContentPanel getContentPanel(TabbedPane tabbedPane) {
 		return null;
 	}
 
@@ -107,6 +114,10 @@ public abstract class JNode extends DefaultMutableTreeNode {
 			return -1;
 		}
 		return javaNode.getDefPos();
+	}
+
+	public String getTooltip() {
+		return null;
 	}
 
 	@Override

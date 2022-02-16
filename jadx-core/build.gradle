@@ -1,18 +1,26 @@
 plugins {
-	id 'java-library'
+	id 'jadx-library'
 }
 
 dependencies {
 	api(project(':jadx-plugins:jadx-plugins-api'))
 
-	implementation 'com.google.code.gson:gson:2.8.6'
-    implementation 'com.android.tools.build:aapt2-proto:4.2.1-7147631'
+	implementation 'com.google.code.gson:gson:2.9.0'
+	implementation 'com.android.tools.build:aapt2-proto:4.2.1-7147631'
+	constraints {
+		// Force protobuf version to prevent Java-7 issue
+		implementation 'com.google.protobuf:protobuf-java:3.11.4'
+	}
 
 	testImplementation 'org.apache.commons:commons-lang3:3.12.0'
 
 	testRuntimeOnly(project(':jadx-plugins:jadx-dex-input'))
 	testRuntimeOnly(project(':jadx-plugins:jadx-smali-input'))
 	testRuntimeOnly(project(':jadx-plugins:jadx-java-convert'))
+	testRuntimeOnly(project(':jadx-plugins:jadx-java-input'))
+	testRuntimeOnly(project(':jadx-plugins:jadx-raung-input'))
+
+	testImplementation('tools.profiler:async-profiler:1.8.3')
 }
 
 test {

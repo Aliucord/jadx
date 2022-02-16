@@ -20,10 +20,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import jadx.api.data.annotations.VarRef;
 import jadx.api.plugins.JadxPlugin;
 import jadx.api.plugins.JadxPluginManager;
 import jadx.api.plugins.input.JadxInputPlugin;
@@ -35,11 +37,12 @@ import jadx.core.dex.nodes.ClassNode;
 import jadx.core.dex.nodes.FieldNode;
 import jadx.core.dex.nodes.MethodNode;
 import jadx.core.dex.nodes.RootNode;
-import jadx.core.dex.nodes.VariableNode;
 import jadx.core.dex.visitors.SaveCode;
 import jadx.core.export.ExportGradleProject;
+import jadx.core.utils.DecompilerScheduler;
 import jadx.core.utils.Utils;
 import jadx.core.utils.exceptions.JadxRuntimeException;
+import jadx.core.utils.files.FileUtils;
 import jadx.core.xmlgen.BinaryXMLParser;
 import jadx.core.xmlgen.ProtoXMLParser;
 import jadx.core.xmlgen.ResContainer;
@@ -50,6 +53,7 @@ import jadx.core.xmlgen.ResourcesSaver;
  *
  * <pre>
  * <code>
+ *
  * JadxArgs args = new JadxArgs();
  * args.getInputFiles().add(new File("test.apk"));
  * args.setOutDir(new File("jadx-test-output"));
@@ -64,6 +68,7 @@ import jadx.core.xmlgen.ResourcesSaver;
  *
  * <pre>
  * <code>
+ *
  *  for(JavaClass cls : jadx.getClasses()) {
  *      System.out.println(cls.getCode());
  *  }
@@ -89,6 +94,7 @@ public final class JadxDecompiler implements Closeable {
 	private final Map<FieldNode, JavaField> fieldsMap = new ConcurrentHashMap<>();
 
 	private final List<Runnable> cleanupTasks = new ArrayList<>();
+	private final IDecompileScheduler decompileScheduler = new DecompilerScheduler(this);
 
 	public JadxDecompiler() {
 		this(new JadxArgs());
@@ -102,6 +108,7 @@ public final class JadxDecompiler implements Closeable {
 		reset();
 		JadxArgsValidator.validate(args);
 		LOG.info("loading ...");
+		loadPlugins(args);
 		loadInputFiles();
 
 		root = new RootNode(args);
@@ -115,12 +122,14 @@ public final class JadxDecompiler implements Closeable {
 	private void loadInputFiles() {
 		loadedInputs.clear();
 		List<Path> inputPaths = Utils.collectionMap(args.getInputFiles(), File::toPath);
+		List<Path> inputFiles = FileUtils.expandDirs(inputPaths);
 		for (JadxInputPlugin inputPlugin : pluginManager.getInputPlugins()) {
-			ILoadResult loadResult = inputPlugin.loadFiles(inputPaths);
+			ILoadResult loadResult = inputPlugin.loadFiles(inputFiles);
 			if (loadResult != null && !loadResult.isEmpty()) {
 				loadedInputs.add(loadResult);
 			}
 		}
+		LOG.debug("Loaded using {} inputs plugin", loadedInputs.size());
 	}
 
 	private void reset() {
@@ -151,6 +160,15 @@ public final class JadxDecompiler implements Closeable {
 	@Override
 	public void close() {
 		reset();
+	}
+
+	private void loadPlugins(JadxArgs args) {
+		pluginManager.providesSuggestion("java-input", args.isUseDxInput() ? "java-convert" : "java-input");
+		pluginManager.load();
+		if (LOG.isDebugEnabled()) {
+			LOG.debug("Resolved plugins: {}", Utils.collectionMap(pluginManager.getResolvedPlugins(),
+					p -> p.getPluginInfo().getPluginId()));
+		}
 	}
 
 	public void registerPlugin(JadxPlugin plugin) {
@@ -257,16 +275,20 @@ public final class JadxDecompiler implements Closeable {
 			resOutDir = args.getOutDirRes();
 		}
 		List<Runnable> tasks = new ArrayList<>();
-		if (saveSources) {
-			appendSourcesSave(tasks, sourcesOutDir);
-		}
+		// save resources first because decompilation can hang or fail
 		if (saveResources) {
 			appendResourcesSaveTasks(tasks, resOutDir);
+		}
+		if (saveSources) {
+			appendSourcesSave(tasks, sourcesOutDir);
 		}
 		return tasks;
 	}
 
 	private void appendResourcesSaveTasks(List<Runnable> tasks, File outDir) {
+		if (args.isSkipFilesSave()) {
+			return;
+		}
 		Set<String> inputFileNames = args.getInputFiles().stream().map(File::getAbsolutePath).collect(Collectors.toSet());
 		for (ResourceFile resourceFile : getResources()) {
 			if (resourceFile.getType() != ResourceType.ARSC
@@ -289,20 +311,32 @@ public final class JadxDecompiler implements Closeable {
 		SaveCode.SaveToJar finalSaveToJar = saveToJar;
 
 		Predicate<String> classFilter = args.getClassFilter();
-		for (JavaClass cls : getClasses()) {
+		List<JavaClass> classes = getClasses();
+		List<JavaClass> processQueue = new ArrayList<>(classes.size());
+		for (JavaClass cls : classes) {
 			if (cls.getClassNode().contains(AFlag.DONT_GENERATE)) {
 				continue;
 			}
 			if (classFilter != null && !classFilter.test(cls.getFullName())) {
 				continue;
 			}
-
+			processQueue.add(cls);
+		}
+		List<List<JavaClass>> batches;
+		try {
+			batches = decompileScheduler.buildBatches(processQueue);
+		} catch (Exception e) {
+			throw new JadxRuntimeException("Decompilation batches build failed", e);
+		}
+		for (List<JavaClass> decompileBatch : batches) {
 			Runnable runnable = () -> {
-				try {
-					ICodeInfo code = cls.getCodeInfo();
-					SaveCode.save(isJar ? null : outDir, cls.getClassNode(), code, isJar ? finalSaveToJar : SaveCode::saveToFile);
-				} catch (Exception e) {
-					LOG.error("Error saving class: {}", cls.getFullName(), e);
+				for (JavaClass cls : decompileBatch) {
+					try {
+						ICodeInfo code = cls.getCodeInfo();
+						SaveCode.save(isJar ? null : outDir, cls.getClassNode(), code, isJar ? finalSaveToJar : SaveCode::saveToFile);
+					} catch (Exception e) {
+						LOG.error("Error saving class: {}", cls.getFullName(), e);
+					}
 				}
 			};
 
@@ -418,12 +452,33 @@ public final class JadxDecompiler implements Closeable {
 			classesMap.put(innerCls.getClassNode(), innerCls);
 			loadJavaClass(innerCls);
 		}
+		for (JavaClass inlinedCls : javaClass.getInlinedClasses()) {
+			classesMap.put(inlinedCls.getClassNode(), inlinedCls);
+			loadJavaClass(inlinedCls);
+		}
+	}
+
+	/**
+	 * Get JavaClass by ClassNode without loading and decompilation
+	 */
+	JavaClass convertClassNode(ClassNode cls) {
+		return classesMap.compute(cls, (node, prevJavaCls) -> {
+			if (prevJavaCls != null && prevJavaCls.getClassNode() == cls) {
+				// keep previous variable
+				return prevJavaCls;
+			}
+			if (cls.isInner()) {
+				return new JavaClass(cls, convertClassNode(cls.getParentClass()));
+			}
+			return new JavaClass(cls, this);
+		});
 	}
 
 	@Nullable("For not generated classes")
-	private JavaClass getJavaClassByNode(ClassNode cls) {
+	@ApiStatus.Internal
+	public JavaClass getJavaClassByNode(ClassNode cls) {
 		JavaClass javaClass = classesMap.get(cls);
-		if (javaClass != null) {
+		if (javaClass != null && javaClass.getClassNode() == cls) {
 			return javaClass;
 		}
 		// load parent class if inner
@@ -453,8 +508,11 @@ public final class JadxDecompiler implements Closeable {
 	@Nullable
 	private JavaMethod getJavaMethodByNode(MethodNode mth) {
 		JavaMethod javaMethod = methodsMap.get(mth);
-		if (javaMethod != null) {
+		if (javaMethod != null && javaMethod.getMethodNode() == mth) {
 			return javaMethod;
+		}
+		if (mth.contains(AFlag.DONT_GENERATE)) {
+			return null;
 		}
 		// parent class not loaded yet
 		JavaClass javaClass = getJavaClassByNode(mth.getParentClass().getTopParentClass());
@@ -475,7 +533,7 @@ public final class JadxDecompiler implements Closeable {
 	@Nullable
 	private JavaField getJavaFieldByNode(FieldNode fld) {
 		JavaField javaField = fieldsMap.get(fld);
-		if (javaField != null) {
+		if (javaField != null && javaField.getFieldNode() == fld) {
 			return javaField;
 		}
 		// parent class not loaded yet
@@ -539,6 +597,15 @@ public final class JadxDecompiler implements Closeable {
 
 	@Nullable
 	JavaNode convertNode(Object obj) {
+		if (obj instanceof VarRef) {
+			VarRef varRef = (VarRef) obj;
+			MethodNode mthNode = varRef.getMth();
+			JavaMethod mth = getJavaMethodByNode(mthNode);
+			if (mth == null) {
+				return null;
+			}
+			return new JavaVariable(mth, varRef);
+		}
 		if (!(obj instanceof LineAttrNode)) {
 			return null;
 		}
@@ -547,7 +614,7 @@ public final class JadxDecompiler implements Closeable {
 			return null;
 		}
 		if (obj instanceof ClassNode) {
-			return getJavaClassByNode((ClassNode) obj);
+			return convertClassNode((ClassNode) obj);
 		}
 		if (obj instanceof MethodNode) {
 			return getJavaMethodByNode(((MethodNode) obj));
@@ -555,11 +622,24 @@ public final class JadxDecompiler implements Closeable {
 		if (obj instanceof FieldNode) {
 			return getJavaFieldByNode((FieldNode) obj);
 		}
-		if (obj instanceof VariableNode) {
-			VariableNode varNode = (VariableNode) obj;
-			return new JavaVariable(getJavaClassByNode(varNode.getClassNode().getTopParentClass()), varNode);
-		}
 		throw new JadxRuntimeException("Unexpected node type: " + obj);
+	}
+
+	// TODO: make interface for all nodes in code annotations and add common method instead this
+	Object getInternalNode(JavaNode javaNode) {
+		if (javaNode instanceof JavaClass) {
+			return ((JavaClass) javaNode).getClassNode();
+		}
+		if (javaNode instanceof JavaMethod) {
+			return ((JavaMethod) javaNode).getMethodNode();
+		}
+		if (javaNode instanceof JavaField) {
+			return ((JavaField) javaNode).getFieldNode();
+		}
+		if (javaNode instanceof JavaVariable) {
+			return ((JavaVariable) javaNode).getVarRef();
+		}
+		throw new JadxRuntimeException("Unexpected node type: " + javaNode);
 	}
 
 	List<JavaNode> convertNodes(Collection<?> nodesList) {
@@ -593,8 +673,20 @@ public final class JadxDecompiler implements Closeable {
 		return new CodePosition(defLine, 0, javaNode.getDefPos());
 	}
 
+	public void reloadCodeData() {
+		root.notifyCodeDataListeners();
+	}
+
 	public JadxArgs getArgs() {
 		return args;
+	}
+
+	public JadxPluginManager getPluginManager() {
+		return pluginManager;
+	}
+
+	public IDecompileScheduler getDecompileScheduler() {
+		return decompileScheduler;
 	}
 
 	@Override

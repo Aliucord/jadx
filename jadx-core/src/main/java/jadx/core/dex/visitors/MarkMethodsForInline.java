@@ -10,7 +10,6 @@ import jadx.core.Consts;
 import jadx.core.dex.attributes.AFlag;
 import jadx.core.dex.attributes.AType;
 import jadx.core.dex.attributes.nodes.MethodInlineAttr;
-import jadx.core.dex.info.AccessInfo;
 import jadx.core.dex.info.FieldInfo;
 import jadx.core.dex.instructions.IndexInsnNode;
 import jadx.core.dex.instructions.InsnType;
@@ -18,9 +17,9 @@ import jadx.core.dex.instructions.InvokeNode;
 import jadx.core.dex.instructions.args.InsnArg;
 import jadx.core.dex.instructions.args.InsnWrapArg;
 import jadx.core.dex.instructions.args.RegisterArg;
-import jadx.core.dex.nodes.BlockNode;
 import jadx.core.dex.nodes.InsnNode;
 import jadx.core.dex.nodes.MethodNode;
+import jadx.core.utils.BlockUtils;
 import jadx.core.utils.exceptions.JadxException;
 
 @JadxVisitor(
@@ -47,45 +46,42 @@ public class MarkMethodsForInline extends AbstractVisitor {
 		if (mia != null) {
 			return mia;
 		}
-		if (canInline(mth)) {
-			List<BlockNode> blocks = mth.getBasicBlocks();
-			if (blocks == null) {
+		if (mth.contains(AFlag.METHOD_CANDIDATE_FOR_INLINE)) {
+			if (mth.getBasicBlocks() == null) {
 				return null;
 			}
-			if (blocks.size() == 2) {
-				BlockNode returnBlock = blocks.get(1);
-				if (returnBlock.contains(AFlag.RETURN) || returnBlock.getInstructions().isEmpty()) {
-					MethodInlineAttr inlined = inlineMth(mth, blocks.get(0), returnBlock);
-					if (inlined != null) {
-						return inlined;
-					}
-				}
+			MethodInlineAttr inlined = inlineMth(mth);
+			if (inlined != null) {
+				return inlined;
 			}
 		}
 		return MethodInlineAttr.inlineNotNeeded(mth);
 	}
 
-	public static boolean canInline(MethodNode mth) {
-		if (mth.isNoCode() || mth.contains(AFlag.DONT_GENERATE)) {
-			return false;
-		}
-		AccessInfo accessFlags = mth.getAccessFlags();
-		return accessFlags.isSynthetic() && accessFlags.isStatic();
-	}
-
 	@Nullable
-	private static MethodInlineAttr inlineMth(MethodNode mth, BlockNode firstBlock, BlockNode returnBlock) {
-		List<InsnNode> insnList = firstBlock.getInstructions();
-		if (insnList.isEmpty()) {
-			// synthetic field getter
-			BlockNode block = mth.getBasicBlocks().get(1);
-			InsnNode insn = block.getInstructions().get(0);
-			// set arg from 'return' instruction
-			return addInlineAttr(mth, InsnNode.wrapArg(insn.getArg(0)));
+	private static MethodInlineAttr inlineMth(MethodNode mth) {
+		List<InsnNode> insns = BlockUtils.collectInsnsWithLimit(mth.getBasicBlocks(), 2);
+		int insnsCount = insns.size();
+		if (insnsCount == 0) {
+			return null;
 		}
-		// synthetic field setter or method invoke
-		if (insnList.size() == 1) {
-			return addInlineAttr(mth, insnList.get(0));
+		if (insnsCount == 1) {
+			InsnNode insn = insns.get(0);
+			if (insn.getType() == InsnType.RETURN && insn.getArgsCount() == 1) {
+				// synthetic field getter
+				// set arg from 'return' instruction
+				InsnArg arg = insn.getArg(0);
+				if (!arg.isInsnWrap()) {
+					return null;
+				}
+				return addInlineAttr(mth, ((InsnWrapArg) arg).getWrapInsn());
+			}
+			// method invoke
+			return addInlineAttr(mth, insn);
+		}
+		if (insnsCount == 2 && insns.get(1).getType() == InsnType.RETURN) {
+			// synthetic field setter
+			return addInlineAttr(mth, insns.get(0));
 		}
 		// TODO: inline field arithmetics. Disabled tests: TestAnonymousClass3a and TestAnonymousClass5
 		return null;
@@ -110,7 +106,7 @@ public class MarkMethodsForInline extends AbstractVisitor {
 		InsnType insnType = insn.getType();
 		if (insnType == InsnType.INVOKE) {
 			InvokeNode invoke = (InvokeNode) insn;
-			MethodNode callMthNode = mth.root().deepResolveMethod(invoke.getCallMth());
+			MethodNode callMthNode = mth.root().resolveMethod(invoke.getCallMth());
 			if (callMthNode != null) {
 				FixAccessModifiers.changeVisibility(callMthNode, newVisFlag);
 			}
@@ -131,7 +127,7 @@ public class MarkMethodsForInline extends AbstractVisitor {
 			}
 		}
 		if (Consts.DEBUG) {
-			mth.addAttr(AType.COMMENTS, "JADX DEBUG: can't inline method, not implemented redirect type: " + insn);
+			mth.addDebugComment("can't inline method, not implemented redirect type: " + insn);
 		}
 		return false;
 	}

@@ -41,6 +41,7 @@ public class JadxArgs {
 	private boolean useImports = true;
 	private boolean debugInfo = true;
 	private boolean insertDebugLines = false;
+	private boolean extractFinally = true;
 	private boolean inlineAnonymousClasses = true;
 	private boolean inlineMethods = true;
 	private boolean generateKotlinMetadata = true;
@@ -82,6 +83,21 @@ public class JadxArgs {
 	private OutputFormatEnum outputFormat = OutputFormatEnum.JAVA;
 
 	private ICodeData codeData;
+
+	private CommentsLevel commentsLevel = CommentsLevel.INFO;
+
+	private boolean useDxInput = false;
+
+	public enum UseKotlinMethodsForVarNames {
+		DISABLE, APPLY, APPLY_AND_HIDE
+	}
+
+	private UseKotlinMethodsForVarNames useKotlinMethodsForVarNames = UseKotlinMethodsForVarNames.APPLY;
+
+	/**
+	 * Don't save files (can be using for performance testing)
+	 */
+	private boolean skipFilesSave = false;
 
 	public JadxArgs() {
 		// use default options
@@ -134,7 +150,7 @@ public class JadxArgs {
 	}
 
 	public void setThreadsCount(int threadsCount) {
-		this.threadsCount = threadsCount;
+		this.threadsCount = Math.max(1, threadsCount); // make sure threadsCount >= 1
 	}
 
 	public boolean isCfgOutput() {
@@ -215,6 +231,14 @@ public class JadxArgs {
 
 	public void setGenerateKotlinMetadata(boolean generateKotlinMetadata) {
 		this.generateKotlinMetadata = generateKotlinMetadata;
+	}
+	
+	public boolean isExtractFinally() {
+		return extractFinally;
+	}
+
+	public void setExtractFinally(boolean extractFinally) {
+		this.extractFinally = extractFinally;
 	}
 
 	public boolean isSkipResources() {
@@ -413,6 +437,38 @@ public class JadxArgs {
 		this.codeData = codeData;
 	}
 
+	public CommentsLevel getCommentsLevel() {
+		return commentsLevel;
+	}
+
+	public void setCommentsLevel(CommentsLevel commentsLevel) {
+		this.commentsLevel = commentsLevel;
+	}
+
+	public boolean isUseDxInput() {
+		return useDxInput;
+	}
+
+	public void setUseDxInput(boolean useDxInput) {
+		this.useDxInput = useDxInput;
+	}
+
+	public UseKotlinMethodsForVarNames getUseKotlinMethodsForVarNames() {
+		return useKotlinMethodsForVarNames;
+	}
+
+	public void setUseKotlinMethodsForVarNames(UseKotlinMethodsForVarNames useKotlinMethodsForVarNames) {
+		this.useKotlinMethodsForVarNames = useKotlinMethodsForVarNames;
+	}
+
+	public boolean isSkipFilesSave() {
+		return skipFilesSave;
+	}
+
+	public void setSkipFilesSave(boolean skipFilesSave) {
+		this.skipFilesSave = skipFilesSave;
+	}
+
 	@Override
 	public String toString() {
 		return "JadxArgs{" + "inputFiles=" + inputFiles
@@ -432,6 +488,7 @@ public class JadxArgs {
 				+ ", deobfuscationForceSave=" + deobfuscationForceSave
 				+ ", useSourceNameAsClassAlias=" + useSourceNameAsClassAlias
 				+ ", parseKotlinMetadata=" + parseKotlinMetadata
+				+ ", useKotlinMethodsForVarNames=" + useKotlinMethodsForVarNames
 				+ ", deobfuscationMinLength=" + deobfuscationMinLength
 				+ ", deobfuscationMaxLength=" + deobfuscationMaxLength
 				+ ", escapeUnicode=" + escapeUnicode
@@ -441,8 +498,10 @@ public class JadxArgs {
 				+ ", fsCaseSensitive=" + fsCaseSensitive
 				+ ", renameFlags=" + renameFlags
 				+ ", outputFormat=" + outputFormat
+				+ ", commentsLevel=" + commentsLevel
 				+ ", codeCache=" + codeCache
 				+ ", codeWriter=" + codeWriterProvider.apply(this).getClass().getSimpleName()
+				+ ", useDxInput=" + useDxInput
 				+ '}';
 	}
 }

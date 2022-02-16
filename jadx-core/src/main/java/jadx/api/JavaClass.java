@@ -7,9 +7,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.Nullable;
 
 import jadx.core.dex.attributes.AFlag;
+import jadx.core.dex.attributes.AType;
+import jadx.core.dex.attributes.nodes.AnonymousClassAttr;
 import jadx.core.dex.info.AccessInfo;
 import jadx.core.dex.nodes.ClassNode;
 import jadx.core.dex.nodes.FieldNode;
@@ -22,6 +25,7 @@ public final class JavaClass implements JavaNode {
 	private final JavaClass parent;
 
 	private List<JavaClass> innerClasses = Collections.emptyList();
+	private List<JavaClass> inlinedClasses = Collections.emptyList();
 	private List<JavaField> fields = Collections.emptyList();
 	private List<JavaMethod> methods = Collections.emptyList();
 	private boolean listsLoaded;
@@ -62,13 +66,23 @@ public final class JavaClass implements JavaNode {
 		cls.reloadCode();
 	}
 
+	public void unload() {
+		listsLoaded = false;
+		cls.unloadCode();
+	}
+
+	public boolean isNoCode() {
+		return cls.contains(AFlag.DONT_GENERATE);
+	}
+
 	public synchronized String getSmali() {
-		return cls.getSmali();
+		return cls.getDisassembledCode();
 	}
 
 	/**
 	 * Internal API. Not Stable!
 	 */
+	@ApiStatus.Internal
 	public ClassNode getClassNode() {
 		return cls;
 	}
@@ -79,18 +93,29 @@ public final class JavaClass implements JavaNode {
 		}
 		listsLoaded = true;
 		decompile();
+		JadxDecompiler rootDecompiler = getRootDecompiler();
 
 		int inClsCount = cls.getInnerClasses().size();
 		if (inClsCount != 0) {
 			List<JavaClass> list = new ArrayList<>(inClsCount);
 			for (ClassNode inner : cls.getInnerClasses()) {
 				if (!inner.contains(AFlag.DONT_GENERATE)) {
-					JavaClass javaClass = new JavaClass(inner, this);
+					JavaClass javaClass = rootDecompiler.convertClassNode(inner);
 					javaClass.loadLists();
 					list.add(javaClass);
 				}
 			}
 			this.innerClasses = Collections.unmodifiableList(list);
+		}
+		int inlinedClsCount = cls.getInlinedClasses().size();
+		if (inlinedClsCount != 0) {
+			List<JavaClass> list = new ArrayList<>(inlinedClsCount);
+			for (ClassNode inner : cls.getInlinedClasses()) {
+				JavaClass javaClass = rootDecompiler.convertClassNode(inner);
+				javaClass.loadLists();
+				list.add(javaClass);
+			}
+			this.inlinedClasses = Collections.unmodifiableList(list);
 		}
 
 		int fieldsCount = cls.getFields().size();
@@ -98,7 +123,7 @@ public final class JavaClass implements JavaNode {
 			List<JavaField> flds = new ArrayList<>(fieldsCount);
 			for (FieldNode f : cls.getFields()) {
 				if (!f.contains(AFlag.DONT_GENERATE)) {
-					JavaField javaField = new JavaField(f, this);
+					JavaField javaField = new JavaField(this, f);
 					flds.add(javaField);
 				}
 			}
@@ -155,6 +180,23 @@ public final class JavaClass implements JavaNode {
 		return resultMap;
 	}
 
+	public List<CodePosition> getUsageFor(JavaNode javaNode) {
+		Map<CodePosition, Object> map = getCodeAnnotations();
+		if (map.isEmpty() || decompiler == null) {
+			return Collections.emptyList();
+		}
+		Object internalNode = getRootDecompiler().getInternalNode(javaNode);
+		List<CodePosition> result = new ArrayList<>();
+		for (Map.Entry<CodePosition, Object> entry : map.entrySet()) {
+			CodePosition codePosition = entry.getKey();
+			Object obj = entry.getValue();
+			if (internalNode.equals(obj)) {
+				result.add(codePosition);
+			}
+		}
+		return result;
+	}
+
 	@Override
 	public List<JavaNode> getUseIn() {
 		return getRootDecompiler().convertNodes(cls.getUseIn());
@@ -201,7 +243,17 @@ public final class JavaClass implements JavaNode {
 
 	@Override
 	public JavaClass getTopParentClass() {
+		if (cls.contains(AType.ANONYMOUS_CLASS)) {
+			// moved to usage class
+			return getParentForAnonymousClass();
+		}
 		return parent == null ? this : parent.getTopParentClass();
+	}
+
+	private JavaClass getParentForAnonymousClass() {
+		AnonymousClassAttr attr = cls.get(AType.ANONYMOUS_CLASS);
+		ClassNode topParentClass = attr.getOuterCls().getTopParentClass();
+		return getRootDecompiler().convertClassNode(topParentClass);
 	}
 
 	public AccessInfo getAccessInfo() {
@@ -213,6 +265,11 @@ public final class JavaClass implements JavaNode {
 		return innerClasses;
 	}
 
+	public List<JavaClass> getInlinedClasses() {
+		loadLists();
+		return inlinedClasses;
+	}
+
 	public List<JavaField> getFields() {
 		loadLists();
 		return fields;
@@ -221,6 +278,20 @@ public final class JavaClass implements JavaNode {
 	public List<JavaMethod> getMethods() {
 		loadLists();
 		return methods;
+	}
+
+	@Nullable
+	public JavaMethod searchMethodByShortId(String shortId) {
+		MethodNode methodNode = cls.searchMethodByShortId(shortId);
+		if (methodNode == null) {
+			return null;
+		}
+		return new JavaMethod(this, methodNode);
+	}
+
+	@Override
+	public void removeAlias() {
+		this.cls.getClassInfo().removeAlias();
 	}
 
 	@Override

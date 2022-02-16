@@ -7,6 +7,7 @@ import java.awt.event.MouseEvent;
 
 import javax.swing.JPopupMenu;
 import javax.swing.event.PopupMenuEvent;
+import javax.swing.text.BadLocationException;
 
 import org.fife.ui.rsyntaxtextarea.RSyntaxDocument;
 import org.fife.ui.rsyntaxtextarea.Token;
@@ -21,8 +22,8 @@ import jadx.api.JavaNode;
 import jadx.gui.settings.JadxProject;
 import jadx.gui.treemodel.JClass;
 import jadx.gui.treemodel.JNode;
-import jadx.gui.ui.ContentPanel;
 import jadx.gui.ui.MainWindow;
+import jadx.gui.ui.panel.ContentPanel;
 import jadx.gui.utils.CaretPositionFix;
 import jadx.gui.utils.DefaultPopupMenuListener;
 import jadx.gui.utils.JNodeCache;
@@ -93,15 +94,18 @@ public final class CodeArea extends AbstractCodeArea {
 		GoToDeclarationAction goToDeclaration = new GoToDeclarationAction(this);
 		RenameAction rename = new RenameAction(this);
 		CommentAction comment = new CommentAction(this);
+		FridaAction frida = new FridaAction(this);
 
 		JPopupMenu popup = getPopupMenu();
 		popup.addSeparator();
 		popup.add(findUsage);
+		popup.add(frida);
 		popup.add(goToDeclaration);
 		popup.add(comment);
 		popup.add(new CommentSearchAction(this));
 		popup.add(rename);
 		popup.addPopupMenuListener(findUsage);
+		popup.addPopupMenuListener(frida);
 		popup.addPopupMenuListener(goToDeclaration);
 		popup.addPopupMenuListener(comment);
 		popup.addPopupMenuListener(rename);
@@ -170,12 +174,43 @@ public final class CodeArea extends AbstractCodeArea {
 			return null;
 		}
 		JNode jNode = convertJavaNode(foundNode);
-		return new JumpPosition(jNode.getRootClass(), pos.getLine(), JumpPosition.getDefPos(jNode));
+		return new JumpPosition(jNode.getRootClass(), pos);
 	}
 
 	private JNode convertJavaNode(JavaNode javaNode) {
 		JNodeCache nodeCache = getMainWindow().getCacheObject().getNodeCache();
 		return nodeCache.makeFrom(javaNode);
+	}
+
+	@SuppressWarnings("deprecation")
+	public CodePosition getMouseCodePos() {
+		try {
+			Point mousePos = UiUtils.getMousePosition(this);
+			return buildCodePosFromOffset(this.viewToModel(mousePos));
+		} catch (Exception e) {
+			LOG.error("Failed to get offset at mouse position", e);
+			return null;
+		}
+	}
+
+	@Nullable
+	public CodePosition getCaretCodePos() {
+		try {
+			return buildCodePosFromOffset(getCaretPosition());
+		} catch (Exception e) {
+			LOG.warn("Failed to get caret position", e);
+			return null;
+		}
+	}
+
+	private CodePosition buildCodePosFromOffset(int offset) throws BadLocationException {
+		int start = getWordStart(offset);
+		if (start == -1) {
+			start = offset;
+		}
+		int line = getLineOfOffset(start);
+		int lineOffset = start - getLineStartOffset(line);
+		return new CodePosition(line + 1, lineOffset + 1, start);
 	}
 
 	public JNode getNodeUnderCaret() {
@@ -220,8 +255,7 @@ public final class CodeArea extends AbstractCodeArea {
 				CaretPositionFix caretFix = new CaretPositionFix(this);
 				caretFix.save();
 
-				cls.reload();
-				getMainWindow().getCacheObject().getIndexService().refreshIndex(cls.getCls());
+				cls.reload(getMainWindow().getCacheObject());
 
 				ClassCodeContentPanel codeContentPanel = (ClassCodeContentPanel) this.contentPanel;
 				codeContentPanel.getTabbedPane().refresh(cls);

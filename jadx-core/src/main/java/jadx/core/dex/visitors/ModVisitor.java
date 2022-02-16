@@ -1,7 +1,5 @@
 package jadx.core.dex.visitors;
 
-import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -14,14 +12,14 @@ import jadx.api.plugins.input.data.annotations.AnnotationVisibility;
 import jadx.api.plugins.input.data.annotations.EncodedType;
 import jadx.api.plugins.input.data.annotations.EncodedValue;
 import jadx.api.plugins.input.data.annotations.IAnnotation;
+import jadx.api.plugins.input.data.attributes.JadxAttrType;
+import jadx.api.plugins.input.data.attributes.types.AnnotationsAttr;
 import jadx.core.dex.attributes.AFlag;
 import jadx.core.dex.attributes.AType;
 import jadx.core.dex.attributes.AttrNode;
-import jadx.core.dex.attributes.annotations.AnnotationsList;
-import jadx.core.dex.attributes.nodes.FieldReplaceAttr;
+import jadx.core.dex.attributes.nodes.SkipMethodArgsAttr;
 import jadx.core.dex.info.AccessInfo;
 import jadx.core.dex.info.FieldInfo;
-import jadx.core.dex.info.MethodInfo;
 import jadx.core.dex.instructions.ArithNode;
 import jadx.core.dex.instructions.ConstClassNode;
 import jadx.core.dex.instructions.ConstStringNode;
@@ -45,6 +43,7 @@ import jadx.core.dex.instructions.mods.TernaryInsn;
 import jadx.core.dex.nodes.BlockNode;
 import jadx.core.dex.nodes.ClassNode;
 import jadx.core.dex.nodes.FieldNode;
+import jadx.core.dex.nodes.IMethodDetails;
 import jadx.core.dex.nodes.InsnNode;
 import jadx.core.dex.nodes.MethodNode;
 import jadx.core.dex.regions.conditions.IfCondition;
@@ -115,7 +114,7 @@ public class ModVisitor extends AbstractVisitor {
 						break;
 
 					case SWITCH:
-						replaceConstKeys(parentClass, (SwitchInsn) insn);
+						replaceConstKeys(mth, parentClass, (SwitchInsn) insn);
 						break;
 
 					case NEW_ARRAY:
@@ -229,13 +228,14 @@ public class ModVisitor extends AbstractVisitor {
 		return result == TypeCompareEnum.NARROW; // true if use class is subclass of field class
 	}
 
-	private static void replaceConstKeys(ClassNode parentClass, SwitchInsn insn) {
+	private static void replaceConstKeys(MethodNode mth, ClassNode parentClass, SwitchInsn insn) {
 		int[] keys = insn.getKeys();
 		int len = keys.length;
 		for (int k = 0; k < len; k++) {
 			FieldNode f = parentClass.getConstField(keys[k]);
 			if (f != null) {
 				insn.modifyKey(k, f);
+				f.addUseIn(mth);
 			}
 		}
 	}
@@ -276,7 +276,7 @@ public class ModVisitor extends AbstractVisitor {
 	}
 
 	private void replaceConstsInAnnotationForAttrNode(ClassNode parentCls, AttrNode attrNode) {
-		AnnotationsList annotationsList = attrNode.get(AType.ANNOTATION_LIST);
+		AnnotationsAttr annotationsList = attrNode.get(JadxAttrType.ANNOTATION_LIST);
 		if (annotationsList == null) {
 			return;
 		}
@@ -292,6 +292,13 @@ public class ModVisitor extends AbstractVisitor {
 
 	@SuppressWarnings("unchecked")
 	private EncodedValue replaceConstValue(ClassNode parentCls, EncodedValue encodedValue) {
+		if (encodedValue.getType() == EncodedType.ENCODED_ANNOTATION) {
+			IAnnotation annotation = (IAnnotation) encodedValue.getValue();
+			for (Map.Entry<String, EncodedValue> entry : annotation.getValues().entrySet()) {
+				entry.setValue(replaceConstValue(parentCls, entry.getValue()));
+			}
+			return encodedValue;
+		}
 		if (encodedValue.getType() == EncodedType.ENCODED_ARRAY) {
 			List<EncodedValue> listVal = (List<EncodedValue>) encodedValue.getValue();
 			if (!listVal.isEmpty()) {
@@ -321,6 +328,7 @@ public class ModVisitor extends AbstractVisitor {
 			InsnNode inode = new IndexInsnNode(InsnType.SGET, f.getFieldInfo(), 0);
 			inode.setResult(insn.getResult());
 			replaceInsn(mth, block, i, inode);
+			f.addUseIn(mth);
 		}
 	}
 
@@ -333,7 +341,9 @@ public class ModVisitor extends AbstractVisitor {
 			FieldNode f = parentClass.getConstFieldByLiteralArg((LiteralArg) litArg);
 			if (f != null) {
 				InsnNode fGet = new IndexInsnNode(InsnType.SGET, f.getFieldInfo(), 0);
-				arithNode.replaceArg(litArg, InsnArg.wrapArg(fGet));
+				if (arithNode.replaceArg(litArg, InsnArg.wrapArg(fGet))) {
+					f.addUseIn(mth);
+				}
 			}
 		}
 	}
@@ -431,96 +441,39 @@ public class ModVisitor extends AbstractVisitor {
 		return false;
 	}
 
+	/**
+	 * For args in anonymous constructor invoke apply:
+	 * - forbid inline into constructor call
+	 * - make variables final (compiler require this implicitly)
+	 */
 	private static void processAnonymousConstructor(MethodNode mth, ConstructorInsn co) {
-		MethodInfo callMth = co.getCallMth();
-		MethodNode callMthNode = mth.root().resolveMethod(callMth);
-		if (callMthNode == null) {
+		IMethodDetails callMthDetails = mth.root().getMethodUtils().getMethodDetails(co);
+		if (!(callMthDetails instanceof MethodNode)) {
 			return;
 		}
-
-		ClassNode classNode = callMthNode.getParentClass();
-		if (!classNode.isAnonymous()) {
+		MethodNode callMth = (MethodNode) callMthDetails;
+		if (!callMth.contains(AFlag.ANONYMOUS_CONSTRUCTOR) || callMth.contains(AFlag.NO_SKIP_ARGS)) {
 			return;
 		}
-		if (!mth.getParentClass().getInnerClasses().contains(classNode)) {
-			return;
-		}
-		Map<InsnArg, FieldNode> argsMap = getArgsToFieldsMapping(callMthNode, co);
-		if (argsMap.isEmpty() && !callMthNode.getArgRegs().isEmpty()) {
-			return;
-		}
-
-		for (Map.Entry<InsnArg, FieldNode> entry : argsMap.entrySet()) {
-			FieldNode field = entry.getValue();
-			if (field == null) {
-				continue;
-			}
-			InsnArg arg = entry.getKey();
-			field.addAttr(new FieldReplaceAttr(arg));
-			field.add(AFlag.DONT_GENERATE);
-			if (arg.isRegister()) {
-				RegisterArg reg = (RegisterArg) arg;
-				SSAVar sVar = reg.getSVar();
-				if (sVar != null) {
-					sVar.getCodeVar().setFinal(true);
+		SkipMethodArgsAttr attr = callMth.get(AType.SKIP_MTH_ARGS);
+		if (attr != null) {
+			int argsCount = Math.min(callMth.getMethodInfo().getArgsCount(), co.getArgsCount());
+			for (int i = 0; i < argsCount; i++) {
+				if (attr.isSkip(i)) {
+					anonymousCallArgMod(co.getArg(i));
 				}
-				reg.add(AFlag.DONT_INLINE);
-				reg.add(AFlag.SKIP_ARG);
 			}
+		} else {
+			// additional info not available apply mods to all args (the safest solution)
+			co.getArguments().forEach(ModVisitor::anonymousCallArgMod);
 		}
 	}
 
-	private static Map<InsnArg, FieldNode> getArgsToFieldsMapping(MethodNode callMthNode, ConstructorInsn co) {
-		Map<InsnArg, FieldNode> map = new LinkedHashMap<>();
-		MethodInfo callMth = callMthNode.getMethodInfo();
-		ClassNode cls = callMthNode.getParentClass();
-		ClassNode parentClass = cls.getParentClass();
-		List<RegisterArg> argList = callMthNode.getArgRegs();
-		int startArg = 0;
-		if (callMth.getArgsCount() != 0 && callMth.getArgumentsTypes().get(0).equals(parentClass.getClassInfo().getType())) {
-			startArg = 1;
+	private static void anonymousCallArgMod(InsnArg arg) {
+		arg.add(AFlag.DONT_INLINE);
+		if (arg.isRegister()) {
+			((RegisterArg) arg).getSVar().getCodeVar().setFinal(true);
 		}
-		int argsCount = argList.size();
-		for (int i = startArg; i < argsCount; i++) {
-			RegisterArg arg = argList.get(i);
-			InsnNode useInsn = getParentInsnSkipMove(arg);
-			if (useInsn == null) {
-				return Collections.emptyMap();
-			}
-			FieldNode fieldNode = null;
-			if (useInsn.getType() == InsnType.IPUT) {
-				FieldInfo field = (FieldInfo) ((IndexInsnNode) useInsn).getIndex();
-				fieldNode = cls.searchField(field);
-				if (fieldNode == null || !fieldNode.getAccessFlags().isSynthetic()) {
-					return Collections.emptyMap();
-				}
-			} else if (useInsn.getType() == InsnType.CONSTRUCTOR) {
-				ConstructorInsn superConstr = (ConstructorInsn) useInsn;
-				if (!superConstr.isSuper()) {
-					return Collections.emptyMap();
-				}
-			} else {
-				return Collections.emptyMap();
-			}
-			map.put(co.getArg(i), fieldNode);
-		}
-		return map;
-	}
-
-	private static InsnNode getParentInsnSkipMove(RegisterArg arg) {
-		SSAVar sVar = arg.getSVar();
-		if (sVar.getUseCount() != 1) {
-			return null;
-		}
-		RegisterArg useArg = sVar.getUseList().get(0);
-		InsnNode parentInsn = useArg.getParentInsn();
-		if (parentInsn == null) {
-			return null;
-		}
-		if (parentInsn.getType() == InsnType.MOVE) {
-			return getParentInsnSkipMove(parentInsn.getResult());
-		}
-		return parentInsn;
 	}
 
 	/**
@@ -574,6 +527,7 @@ public class ModVisitor extends AbstractVisitor {
 			if (f != null) {
 				InsnNode fGet = new IndexInsnNode(InsnType.SGET, f.getFieldInfo(), 0);
 				filledArr.addArg(InsnArg.wrapArg(fGet));
+				f.addUseIn(mth);
 			} else {
 				filledArr.addArg(arg);
 			}

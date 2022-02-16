@@ -2,7 +2,11 @@ package jadx.plugins.input.dex.insns;
 
 import org.jetbrains.annotations.Nullable;
 
-import jadx.api.plugins.input.data.*;
+import jadx.api.plugins.input.data.ICallSite;
+import jadx.api.plugins.input.data.IFieldRef;
+import jadx.api.plugins.input.data.IMethodHandle;
+import jadx.api.plugins.input.data.IMethodProto;
+import jadx.api.plugins.input.data.IMethodRef;
 import jadx.api.plugins.input.insns.InsnData;
 import jadx.api.plugins.input.insns.InsnIndexType;
 import jadx.api.plugins.input.insns.Opcode;
@@ -63,6 +67,11 @@ public class DexInsnData implements InsnData {
 	}
 
 	@Override
+	public String getOpcodeMnemonic() {
+		return DexInsnMnemonics.get(opcodeUnit);
+	}
+
+	@Override
 	public byte[] getByteCode() {
 		return externalReader.getByteCode(insnStart, length * 2); // a unit is 2 bytes
 	}
@@ -80,6 +89,11 @@ public class DexInsnData implements InsnData {
 	@Override
 	public int getReg(int argNum) {
 		return argsReg[argNum];
+	}
+
+	@Override
+	public int getResultReg() {
+		return -1;
 	}
 
 	@Override
@@ -113,8 +127,8 @@ public class DexInsnData implements InsnData {
 	}
 
 	@Override
-	public IFieldData getIndexAsField() {
-		return externalReader.getFieldData(index);
+	public IFieldRef getIndexAsField() {
+		return externalReader.getFieldRef(index);
 	}
 
 	@Override

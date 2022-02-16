@@ -1,10 +1,9 @@
 package jadx.gui.jobs;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
-
-import javax.swing.JOptionPane;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,7 +27,8 @@ public class DecompileTask implements IBackgroundTask {
 	private final JadxWrapper wrapper;
 	private final AtomicInteger complete = new AtomicInteger(0);
 	private int expectedCompleteCount;
-	private long startTime;
+
+	private ProcessResult result;
 
 	public DecompileTask(MainWindow mainWindow, JadxWrapper wrapper) {
 		this.mainWindow = mainWindow;
@@ -42,61 +42,51 @@ public class DecompileTask implements IBackgroundTask {
 
 	@Override
 	public List<Runnable> scheduleJobs() {
+		IndexService indexService = mainWindow.getCacheObject().getIndexService();
 		List<JavaClass> classes = wrapper.getIncludedClasses();
 		expectedCompleteCount = classes.size();
 
-		IndexService indexService = mainWindow.getCacheObject().getIndexService();
 		indexService.setComplete(false);
 		complete.set(0);
 
-		List<Runnable> jobs = new ArrayList<>(expectedCompleteCount + 1);
-		for (JavaClass cls : classes) {
+		List<List<JavaClass>> batches;
+		try {
+			batches = wrapper.buildDecompileBatches(classes);
+		} catch (Exception e) {
+			LOG.error("Decompile batches build error", e);
+			return Collections.emptyList();
+		}
+		List<Runnable> jobs = new ArrayList<>(batches.size());
+		for (List<JavaClass> batch : batches) {
 			jobs.add(() -> {
-				cls.decompile();
-				indexService.indexCls(cls);
-				complete.incrementAndGet();
+				for (JavaClass cls : batch) {
+					try {
+						cls.decompile();
+					} catch (Throwable e) {
+						LOG.error("Failed to decompile class: {}", cls, e);
+					} finally {
+						complete.incrementAndGet();
+					}
+				}
 			});
 		}
-		jobs.add(indexService::indexResources);
-		startTime = System.currentTimeMillis();
 		return jobs;
 	}
 
 	@Override
-	public void onFinish(TaskStatus status, long skippedJobs) {
-		long taskTime = System.currentTimeMillis() - startTime;
-		long avgPerCls = taskTime / expectedCompleteCount;
-		LOG.info("Decompile task complete in {} ms (avg {} ms per class), classes: {},"
-				+ " time limit:{ total: {}ms, per cls: {}ms }, status: {}",
-				taskTime, avgPerCls, expectedCompleteCount, timeLimit(), CLS_LIMIT, status);
-
-		IndexService indexService = mainWindow.getCacheObject().getIndexService();
-		indexService.setComplete(true);
-		if (skippedJobs == 0) {
-			return;
-		}
-
+	public void onDone(ITaskInfo taskInfo) {
+		long taskTime = taskInfo.getTime();
+		long avgPerCls = taskTime / Math.max(expectedCompleteCount, 1);
+		int timeLimit = timeLimit();
 		int skippedCls = expectedCompleteCount - complete.get();
-		LOG.warn("Decompile and indexing of some classes skipped: {}, status: {}", skippedCls, status);
-		switch (status) {
-			case CANCEL_BY_USER: {
-				String reason = NLS.str("message.userCancelTask");
-				String message = NLS.str("message.indexIncomplete", reason, skippedCls);
-				JOptionPane.showMessageDialog(mainWindow, message);
-				break;
-			}
-			case CANCEL_BY_TIMEOUT: {
-				String reason = NLS.str("message.taskTimeout", timeLimit());
-				String message = NLS.str("message.indexIncomplete", reason, skippedCls);
-				JOptionPane.showMessageDialog(mainWindow, message);
-				break;
-			}
-			case CANCEL_BY_MEMORY: {
-				mainWindow.showHeapUsageBar();
-				JOptionPane.showMessageDialog(mainWindow, NLS.str("message.indexingClassesSkipped", skippedCls));
-				break;
-			}
+		if (LOG.isInfoEnabled()) {
+			LOG.info("Decompile task complete in " + taskTime + " ms (avg " + avgPerCls + " ms per class)"
+					+ ", classes: " + expectedCompleteCount
+					+ ", skipped: " + skippedCls
+					+ ", time limit:{ total: " + timeLimit + "ms, per cls: " + CLS_LIMIT + "ms }"
+					+ ", status: " + taskInfo.getStatus());
 		}
+		this.result = new ProcessResult(skippedCls, taskInfo.getStatus(), timeLimit);
 	}
 
 	@Override
@@ -112,5 +102,9 @@ public class DecompileTask implements IBackgroundTask {
 	@Override
 	public boolean checkMemoryUsage() {
 		return true;
+	}
+
+	public ProcessResult getResult() {
+		return result;
 	}
 }

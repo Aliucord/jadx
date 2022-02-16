@@ -2,13 +2,18 @@ package jadx.core.dex.visitors;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
+import jadx.api.plugins.input.data.attributes.JadxAttrType;
 import jadx.core.dex.attributes.AFlag;
 import jadx.core.dex.attributes.AType;
-import jadx.core.dex.attributes.fldinit.FieldInitAttr;
+import jadx.core.dex.attributes.FieldInitInsnAttr;
 import jadx.core.dex.info.AccessInfo;
 import jadx.core.dex.info.FieldInfo;
 import jadx.core.dex.instructions.IndexInsnNode;
@@ -24,6 +29,7 @@ import jadx.core.dex.nodes.MethodNode;
 import jadx.core.dex.visitors.shrink.CodeShrinkVisitor;
 import jadx.core.utils.BlockUtils;
 import jadx.core.utils.InsnRemover;
+import jadx.core.utils.Utils;
 import jadx.core.utils.exceptions.JadxException;
 
 @JadxVisitor(
@@ -39,193 +45,195 @@ public class ExtractFieldInit extends AbstractVisitor {
 		for (ClassNode inner : cls.getInnerClasses()) {
 			visit(inner);
 		}
-		checkStaticFieldsInit(cls);
 		moveStaticFieldsInit(cls);
 		moveCommonFieldsInit(cls);
 		return false;
 	}
 
-	private static void checkStaticFieldsInit(ClassNode cls) {
-		MethodNode clinit = cls.getClassInitMth();
-		if (clinit == null
-				|| !clinit.getAccessFlags().isStatic()
-				|| clinit.isNoCode()
-				|| clinit.getBasicBlocks() == null) {
-			return;
-		}
+	private static final class FieldInitInfo {
+		final FieldNode fieldNode;
+		final IndexInsnNode putInsn;
+		final boolean singlePath;
 
-		for (BlockNode block : clinit.getBasicBlocks()) {
-			for (InsnNode insn : block.getInstructions()) {
-				if (insn.getType() == InsnType.SPUT) {
-					processStaticFieldAssign(cls, (IndexInsnNode) insn);
-				}
-			}
+		public FieldInitInfo(FieldNode fieldNode, IndexInsnNode putInsn, boolean singlePath) {
+			this.fieldNode = fieldNode;
+			this.putInsn = putInsn;
+			this.singlePath = singlePath;
 		}
 	}
 
-	/**
-	 * Remove a final field in place initialization if it an assign found in class init method
-	 */
-	private static void processStaticFieldAssign(ClassNode cls, IndexInsnNode insn) {
-		FieldInfo field = (FieldInfo) insn.getIndex();
-		if (field.getDeclClass().equals(cls.getClassInfo())) {
-			FieldNode fn = cls.searchField(field);
-			if (fn != null && fn.getAccessFlags().isFinal()) {
-				fn.remove(AType.FIELD_INIT);
-			}
+	private static final class ConstructorInitInfo {
+		final MethodNode constructorMth;
+		final List<FieldInitInfo> fieldInits;
+
+		private ConstructorInitInfo(MethodNode constructorMth, List<FieldInitInfo> fieldInits) {
+			this.constructorMth = constructorMth;
+			this.fieldInits = fieldInits;
 		}
 	}
 
 	private static void moveStaticFieldsInit(ClassNode cls) {
 		MethodNode classInitMth = cls.getClassInitMth();
-		if (classInitMth == null) {
+		if (classInitMth == null
+				|| !classInitMth.getAccessFlags().isStatic()
+				|| classInitMth.isNoCode()
+				|| classInitMth.getBasicBlocks() == null) {
 			return;
 		}
-		while (processFields(cls, classInitMth)) {
+		while (processStaticFields(cls, classInitMth)) {
 			// sometimes instructions moved to field init prevent from vars inline -> inline and try again
 			CodeShrinkVisitor.shrinkMethod(classInitMth);
 		}
 	}
 
-	private static boolean processFields(ClassNode cls, MethodNode classInitMth) {
-		boolean changed = false;
-		for (FieldNode field : cls.getFields()) {
-			if (field.contains(AFlag.DONT_GENERATE) || field.contains(AType.FIELD_INIT)) {
-				continue;
-			}
-			if (field.getAccessFlags().isStatic()) {
-				List<InsnNode> initInsns = getFieldAssigns(classInitMth, field, InsnType.SPUT);
-				if (initInsns.size() == 1) {
-					InsnNode insn = initInsns.get(0);
-					if (checkInsn(cls, insn)) {
-						InsnArg arg = insn.getArg(0);
-						if (arg instanceof InsnWrapArg) {
-							((InsnWrapArg) arg).getWrapInsn().add(AFlag.DECLARE_VAR);
-						}
-						InsnRemover.remove(classInitMth, insn);
-						addFieldInitAttr(classInitMth, field, insn);
-						changed = true;
-					}
-				}
+	private static boolean processStaticFields(ClassNode cls, MethodNode classInitMth) {
+		List<FieldInitInfo> inits = collectFieldsInit(cls, classInitMth, InsnType.SPUT);
+		if (inits.isEmpty()) {
+			return false;
+		}
+		// ignore field init constant if field initialized in class init method
+		for (FieldInitInfo fieldInit : inits) {
+			FieldNode field = fieldInit.fieldNode;
+			if (field.getAccessFlags().isFinal()) {
+				field.remove(JadxAttrType.CONSTANT_VALUE);
 			}
 		}
-		return changed;
-	}
-
-	private static class InitInfo {
-		private final MethodNode constrMth;
-		private final List<InsnNode> putInsns = new ArrayList<>();
-
-		private InitInfo(MethodNode constrMth) {
-			this.constrMth = constrMth;
+		filterFieldsInit(inits);
+		if (inits.isEmpty()) {
+			return false;
 		}
-
-		public MethodNode getConstrMth() {
-			return constrMth;
+		for (FieldInitInfo fieldInit : inits) {
+			IndexInsnNode insn = fieldInit.putInsn;
+			InsnArg arg = insn.getArg(0);
+			if (arg instanceof InsnWrapArg) {
+				((InsnWrapArg) arg).getWrapInsn().add(AFlag.DECLARE_VAR);
+			}
+			InsnRemover.remove(classInitMth, insn);
+			addFieldInitAttr(classInitMth, fieldInit.fieldNode, insn);
 		}
-
-		public List<InsnNode> getPutInsns() {
-			return putInsns;
-		}
+		fixFieldsOrder(cls, inits);
+		return true;
 	}
 
 	private static void moveCommonFieldsInit(ClassNode cls) {
-		List<MethodNode> constrList = getConstructorsList(cls);
-		if (constrList.isEmpty()) {
+		List<MethodNode> constructors = getConstructorsList(cls);
+		if (constructors.isEmpty()) {
 			return;
 		}
-		List<InitInfo> infoList = new ArrayList<>(constrList.size());
-		for (MethodNode constrMth : constrList) {
-			if (constrMth.isNoCode() || constrMth.getBasicBlocks().isEmpty()) {
+		List<ConstructorInitInfo> infoList = new ArrayList<>(constructors.size());
+		for (MethodNode constructorMth : constructors) {
+			if (constructorMth.isNoCode()) {
 				return;
 			}
-			InitInfo info = new InitInfo(constrMth);
-			infoList.add(info);
-			// TODO: check not only first block
-			BlockNode blockNode = constrMth.getBasicBlocks().get(0);
-			for (InsnNode insn : blockNode.getInstructions()) {
-				if (insn.getType() == InsnType.IPUT && checkInsn(cls, insn)) {
-					info.getPutInsns().add(insn);
-				} else if (!info.getPutInsns().isEmpty()) {
-					break;
-				}
+			List<FieldInitInfo> inits = collectFieldsInit(cls, constructorMth, InsnType.IPUT);
+			filterFieldsInit(inits);
+			if (inits.isEmpty()) {
+				return;
 			}
+			infoList.add(new ConstructorInitInfo(constructorMth, inits));
 		}
 		// compare collected instructions
-		InitInfo common = null;
-		for (InitInfo info : infoList) {
+		ConstructorInitInfo common = null;
+		for (ConstructorInitInfo info : infoList) {
 			if (common == null) {
 				common = info;
-			} else if (!compareInsns(common.getPutInsns(), info.getPutInsns())) {
+				continue;
+			}
+			if (!compareFieldInits(common.fieldInits, info.fieldInits)) {
 				return;
 			}
 		}
 		if (common == null) {
 			return;
 		}
-		Set<FieldInfo> fields = new HashSet<>();
-		for (InsnNode insn : common.getPutInsns()) {
-			FieldInfo fieldInfo = (FieldInfo) ((IndexInsnNode) insn).getIndex();
-			FieldNode field = cls.root().resolveField(fieldInfo);
-			if (field == null) {
-				return;
-			}
-			if (!fields.add(fieldInfo)) {
-				return;
-			}
-		}
 		// all checks passed
-		for (InitInfo info : infoList) {
-			for (InsnNode putInsn : info.getPutInsns()) {
+		for (ConstructorInitInfo info : infoList) {
+			for (FieldInitInfo fieldInit : info.fieldInits) {
+				IndexInsnNode putInsn = fieldInit.putInsn;
 				InsnArg arg = putInsn.getArg(0);
 				if (arg instanceof InsnWrapArg) {
 					((InsnWrapArg) arg).getWrapInsn().add(AFlag.DECLARE_VAR);
 				}
-				InsnRemover.remove(info.getConstrMth(), putInsn);
+				InsnRemover.remove(info.constructorMth, putInsn);
 			}
 		}
-		for (InsnNode insn : common.getPutInsns()) {
-			FieldInfo fieldInfo = (FieldInfo) ((IndexInsnNode) insn).getIndex();
-			FieldNode field = cls.root().resolveField(fieldInfo);
-			addFieldInitAttr(common.getConstrMth(), field, insn);
+		for (FieldInitInfo fieldInit : common.fieldInits) {
+			addFieldInitAttr(common.constructorMth, fieldInit.fieldNode, fieldInit.putInsn);
+		}
+		fixFieldsOrder(cls, common.fieldInits);
+	}
+
+	private static List<FieldInitInfo> collectFieldsInit(ClassNode cls, MethodNode mth, InsnType putType) {
+		List<FieldInitInfo> fieldsInit = new ArrayList<>();
+		Set<BlockNode> singlePathBlocks = new HashSet<>();
+		BlockUtils.visitSinglePath(mth.getEnterBlock(), singlePathBlocks::add);
+
+		for (BlockNode block : mth.getBasicBlocks()) {
+			for (InsnNode insn : block.getInstructions()) {
+				if (insn.getType() == putType) {
+					IndexInsnNode putInsn = (IndexInsnNode) insn;
+					FieldInfo field = (FieldInfo) putInsn.getIndex();
+					if (field.getDeclClass().equals(cls.getClassInfo())) {
+						FieldNode fn = cls.searchField(field);
+						if (fn != null) {
+							boolean singlePath = singlePathBlocks.contains(block);
+							fieldsInit.add(new FieldInitInfo(fn, putInsn, singlePath));
+						}
+					}
+				}
+			}
+		}
+		return fieldsInit;
+	}
+
+	private static void filterFieldsInit(List<FieldInitInfo> inits) {
+		// exclude fields initialized several times
+		Set<FieldInfo> excludedFields = inits
+				.stream()
+				.collect(Collectors.toMap(fi -> fi.fieldNode, fi -> 1, Integer::sum))
+				.entrySet()
+				.stream()
+				.filter(v -> v.getValue() > 1)
+				.map(v -> v.getKey().getFieldInfo())
+				.collect(Collectors.toSet());
+
+		for (FieldInitInfo initInfo : inits) {
+			if (!checkInsn(initInfo)) {
+				excludedFields.add(initInfo.fieldNode.getFieldInfo());
+			}
+		}
+		if (!excludedFields.isEmpty()) {
+			boolean changed;
+			do {
+				changed = false;
+				for (FieldInitInfo initInfo : inits) {
+					FieldInfo fieldInfo = initInfo.fieldNode.getFieldInfo();
+					if (excludedFields.contains(fieldInfo)) {
+						continue;
+					}
+					if (insnUseExcludedField(initInfo, excludedFields)) {
+						excludedFields.add(fieldInfo);
+						changed = true;
+					}
+				}
+			} while (changed);
+		}
+
+		// apply
+		if (!excludedFields.isEmpty()) {
+			inits.removeIf(fi -> excludedFields.contains(fi.fieldNode.getFieldInfo()));
 		}
 	}
 
-	private static boolean compareInsns(List<InsnNode> base, List<InsnNode> other) {
-		if (base.size() != other.size()) {
+	private static boolean checkInsn(FieldInitInfo initInfo) {
+		if (!initInfo.singlePath) {
 			return false;
 		}
-		int count = base.size();
-		for (int i = 0; i < count; i++) {
-			InsnNode baseInsn = base.get(i);
-			InsnNode otherInsn = other.get(i);
-			if (!baseInsn.isSame(otherInsn)) {
-				return false;
-			}
-		}
-		return true;
-	}
-
-	private static boolean checkInsn(ClassNode cls, InsnNode insn) {
-		if (insn instanceof IndexInsnNode) {
-			FieldInfo fieldInfo = (FieldInfo) ((IndexInsnNode) insn).getIndex();
-			if (!fieldInfo.getDeclClass().equals(cls.getClassInfo())) {
-				// exclude fields from super classes
-				return false;
-			}
-			FieldNode fieldNode = cls.root().resolveField(fieldInfo);
-			if (fieldNode == null) {
-				// exclude inherited fields (not declared in this class)
-				return false;
-			}
-		} else {
-			return false;
-		}
-
+		IndexInsnNode insn = initInfo.putInsn;
 		InsnArg arg = insn.getArg(0);
 		if (arg.isInsnWrap()) {
 			InsnNode wrapInsn = ((InsnWrapArg) arg).getWrapInsn();
-			if (!wrapInsn.canReorderRecursive() && insn.contains(AType.CATCH_BLOCK)) {
+			if (!wrapInsn.canReorderRecursive() && insn.contains(AType.EXC_CATCH)) {
 				return false;
 			}
 		} else {
@@ -238,6 +246,113 @@ public class ExtractFieldInit extends AbstractVisitor {
 				if (!reg.isThis()) {
 					return false;
 				}
+			}
+		}
+		return true;
+	}
+
+	private static boolean insnUseExcludedField(FieldInitInfo initInfo, Set<FieldInfo> excludedFields) {
+		if (excludedFields.isEmpty()) {
+			return false;
+		}
+		IndexInsnNode insn = initInfo.putInsn;
+		boolean staticField = insn.getType() == InsnType.SPUT;
+		InsnType useType = staticField ? InsnType.SGET : InsnType.IGET;
+		// exclude if init code use any excluded field
+		Boolean exclude = insn.visitInsns(innerInsn -> {
+			if (innerInsn.getType() == useType) {
+				FieldInfo fieldInfo = (FieldInfo) ((IndexInsnNode) innerInsn).getIndex();
+				if (excludedFields.contains(fieldInfo)) {
+					return true;
+				}
+			}
+			return null;
+		});
+		return Objects.equals(exclude, Boolean.TRUE);
+	}
+
+	private static void fixFieldsOrder(ClassNode cls, List<FieldInitInfo> inits) {
+		List<FieldNode> orderedFields = processFieldsDependencies(cls, inits);
+		applyFieldsOrder(cls, orderedFields);
+	}
+
+	private static List<FieldNode> processFieldsDependencies(ClassNode cls, List<FieldInitInfo> inits) {
+		List<FieldNode> orderedFields = Utils.collectionMap(inits, v -> v.fieldNode);
+		// collect dependant fields
+		Map<FieldNode, List<FieldNode>> deps = new HashMap<>(inits.size());
+		for (FieldInitInfo initInfo : inits) {
+			IndexInsnNode insn = initInfo.putInsn;
+			boolean staticField = insn.getType() == InsnType.SPUT;
+			InsnType useType = staticField ? InsnType.SGET : InsnType.IGET;
+			insn.visitInsns(subInsn -> {
+				if (subInsn.getType() == useType) {
+					FieldInfo fieldInfo = (FieldInfo) ((IndexInsnNode) subInsn).getIndex();
+					if (fieldInfo.getDeclClass().equals(cls.getClassInfo())) {
+						FieldNode depField = cls.searchField(fieldInfo);
+						if (depField != null) {
+							deps.computeIfAbsent(initInfo.fieldNode, k -> new ArrayList<>())
+									.add(depField);
+						}
+					}
+				}
+			});
+		}
+		if (deps.isEmpty()) {
+			return orderedFields;
+		}
+		// build new list with deps fields before usage field
+		List<FieldNode> result = new ArrayList<>();
+		for (FieldNode field : orderedFields) {
+			int idx = result.indexOf(field);
+			List<FieldNode> fieldDeps = deps.get(field);
+			if (fieldDeps == null) {
+				if (idx == -1) {
+					result.add(field);
+				}
+				continue;
+			}
+			if (idx == -1) {
+				for (FieldNode depField : fieldDeps) {
+					if (!result.contains(depField)) {
+						result.add(depField);
+					}
+				}
+				result.add(field);
+				continue;
+			}
+			for (FieldNode depField : fieldDeps) {
+				int depIdx = result.indexOf(depField);
+				if (depIdx == -1) {
+					result.add(idx, depField);
+				} else if (depIdx > idx) {
+					result.remove(depIdx);
+					result.add(idx, depField);
+				}
+			}
+		}
+		return result;
+	}
+
+	private static void applyFieldsOrder(ClassNode cls, List<FieldNode> orderedFields) {
+		List<FieldNode> clsFields = cls.getFields();
+		// check if already ordered
+		boolean ordered = Collections.indexOfSubList(clsFields, orderedFields) != -1;
+		if (!ordered) {
+			clsFields.removeAll(orderedFields);
+			clsFields.addAll(orderedFields);
+		}
+	}
+
+	private static boolean compareFieldInits(List<FieldInitInfo> base, List<FieldInitInfo> other) {
+		if (base.size() != other.size()) {
+			return false;
+		}
+		int count = base.size();
+		for (int i = 0; i < count; i++) {
+			InsnNode baseInsn = base.get(i).putInsn;
+			InsnNode otherInsn = other.get(i).putInsn;
+			if (!baseInsn.isSame(otherInsn)) {
+				return false;
 			}
 		}
 		return true;
@@ -257,26 +372,8 @@ public class ExtractFieldInit extends AbstractVisitor {
 		return list;
 	}
 
-	private static List<InsnNode> getFieldAssigns(MethodNode mth, FieldNode field, InsnType putInsn) {
-		if (mth.isNoCode() || mth.getBasicBlocks() == null) {
-			return Collections.emptyList();
-		}
-		List<InsnNode> assignInsns = new ArrayList<>();
-		for (BlockNode block : mth.getBasicBlocks()) {
-			for (InsnNode insn : block.getInstructions()) {
-				if (insn.getType() == putInsn) {
-					FieldInfo putNode = (FieldInfo) ((IndexInsnNode) insn).getIndex();
-					if (putNode.equals(field.getFieldInfo())) {
-						assignInsns.add(insn);
-					}
-				}
-			}
-		}
-		return assignInsns;
-	}
-
-	private static void addFieldInitAttr(MethodNode classInitMth, FieldNode field, InsnNode insn) {
+	private static void addFieldInitAttr(MethodNode mth, FieldNode field, InsnNode insn) {
 		InsnNode assignInsn = InsnNode.wrapArg(insn.getArg(0));
-		field.addAttr(FieldInitAttr.insnValue(classInitMth, assignInsn));
+		field.addAttr(new FieldInitInsnAttr(mth, assignInsn));
 	}
 }

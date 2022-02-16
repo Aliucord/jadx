@@ -10,6 +10,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 
 public class TestSynchronizedInEndlessLoop extends IntegrationTest {
 
+	@SuppressWarnings("BusyWait")
 	public static class TestCls {
 		int f = 5;
 
@@ -18,13 +19,14 @@ public class TestSynchronizedInEndlessLoop extends IntegrationTest {
 				synchronized (this) {
 					if (f > 7) {
 						return 7;
-					} else if (f < 3) {
+					}
+					if (f < 3) {
 						return 3;
 					}
 				}
 				try {
 					f++;
-					Thread.sleep(100);
+					Thread.sleep(100L);
 				} catch (Exception e) {
 					throw new RuntimeException(e);
 				}
@@ -40,7 +42,7 @@ public class TestSynchronizedInEndlessLoop extends IntegrationTest {
 		assertThat(code, containsOne("synchronized (this) {"));
 		assertThat(code, containsOne("try {"));
 		assertThat(code, containsOne("f++;"));
-		assertThat(code, containsOne("Thread.sleep(100);"));
+		assertThat(code, containsOne("Thread.sleep(100L);"));
 		assertThat(code, containsOne("} catch (Exception e) {"));
 	}
 }

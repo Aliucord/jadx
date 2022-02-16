@@ -1,0 +1,20 @@
+plugins {
+	id 'java-library'
+}
+
+
+group = 'io.github.skylot'
+version = jadxVersion
+
+java {
+	withJavadocJar()
+	withSourcesJar()
+}
+
+javadoc {
+	if (JavaVersion.current().isJava9Compatible()) {
+		options.addBooleanOption('html5', true)
+	}
+	// disable 'missing' warnings
+	options.addStringOption('Xdoclint:all,-missing', '-quiet')
+}

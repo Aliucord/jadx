@@ -45,6 +45,9 @@ public class SaveCode {
 		if (codeStr.isEmpty()) {
 			return;
 		}
+		if (cls.root().getArgs().isSkipFilesSave()) {
+			return;
+		}
 		String fileName = cls.getClassInfo().getAliasFullPath() + getFileExtension(cls);
 
 		if (!ZipSecurity.isValidZipEntryName(fileName)) {

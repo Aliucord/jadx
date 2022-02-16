@@ -18,6 +18,7 @@ import org.slf4j.LoggerFactory;
 
 import jadx.api.ICodeWriter;
 import jadx.api.impl.SimpleCodeWriter;
+import jadx.core.codegen.ConditionGen;
 import jadx.core.codegen.InsnGen;
 import jadx.core.codegen.MethodGen;
 import jadx.core.dex.attributes.AType;
@@ -30,6 +31,9 @@ import jadx.core.dex.nodes.IRegion;
 import jadx.core.dex.nodes.InsnNode;
 import jadx.core.dex.nodes.MethodNode;
 import jadx.core.dex.nodes.RootNode;
+import jadx.core.dex.regions.Region;
+import jadx.core.dex.regions.conditions.IfCondition;
+import jadx.core.dex.regions.loops.LoopRegion;
 import jadx.core.dex.visitors.AbstractVisitor;
 import jadx.core.dex.visitors.DotGraphVisitor;
 import jadx.core.dex.visitors.IDexTreeVisitor;
@@ -50,6 +54,16 @@ public class DebugUtils {
 
 	public static void dump(MethodNode mth) {
 		dump(mth, "dump");
+	}
+
+	public static void dumpRaw(MethodNode mth, String desc, Predicate<MethodNode> dumpCondition) {
+		if (dumpCondition.test(mth)) {
+			dumpRaw(mth, desc);
+		}
+	}
+
+	public static void dumpRawTest(MethodNode mth, String desc) {
+		dumpRaw(mth, desc, method -> method.getName().equals("test"));
 	}
 
 	public static void dumpRaw(MethodNode mth, String desc) {
@@ -111,7 +125,11 @@ public class DebugUtils {
 	}
 
 	public static void printRegions(MethodNode mth, boolean printInsns) {
-		printRegion(mth, mth.getRegion(), printInsns);
+		Region mthRegion = mth.getRegion();
+		if (mthRegion == null) {
+			return;
+		}
+		printRegion(mth, mthRegion, printInsns);
 	}
 
 	public static void printRegion(MethodNode mth, IRegion region, boolean printInsns) {
@@ -124,6 +142,7 @@ public class DebugUtils {
 	private static void printRegion(MethodNode mth, IRegion region, ICodeWriter cw, String indent, boolean printInsns) {
 		printWithAttributes(cw, indent, region.toString(), region);
 		indent += "|  ";
+		printRegionSpecificInfo(cw, indent, mth, region, printInsns);
 		for (IContainer container : region.getSubBlocks()) {
 			if (container instanceof IRegion) {
 				printRegion(mth, (IRegion) container, cw, indent, printInsns);
@@ -132,6 +151,23 @@ public class DebugUtils {
 				if (printInsns && container instanceof IBlock) {
 					IBlock block = (IBlock) container;
 					printInsns(mth, cw, indent, block);
+				}
+			}
+		}
+	}
+
+	private static void printRegionSpecificInfo(ICodeWriter cw, String indent,
+			MethodNode mth, IRegion region, boolean printInsns) {
+		if (region instanceof LoopRegion) {
+			LoopRegion loop = (LoopRegion) region;
+			IfCondition condition = loop.getCondition();
+			if (printInsns && condition != null) {
+				ConditionGen conditionGen = new ConditionGen(new InsnGen(MethodGen.getFallbackMethodGen(mth), true));
+				cw.startLine(indent).add("|> ");
+				try {
+					conditionGen.add(cw, condition);
+				} catch (Exception e) {
+					cw.startLine(indent).add(">!! ").add(condition.toString());
 				}
 			}
 		}

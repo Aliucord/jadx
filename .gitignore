@@ -33,3 +33,6 @@ jadx-output/
 *.log
 *.cfg
 *.orig
+quark.json
+
+cliff.toml

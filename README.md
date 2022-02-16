@@ -5,11 +5,14 @@
 [![Build status](https://github.com/skylot/jadx/workflows/Build/badge.svg)](https://github.com/skylot/jadx/actions?query=workflow%3ABuild)
 [![Alerts from lgtm.com](https://img.shields.io/lgtm/alerts/g/skylot/jadx.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/skylot/jadx/alerts/)
 [![semantic-release](https://img.shields.io/badge/%20%20%F0%9F%93%A6%F0%9F%9A%80-semantic--release-e10079.svg)](https://github.com/semantic-release/semantic-release)
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.skylot/jadx-core)](https://search.maven.org/search?q=g:io.github.skylot%20AND%20jadx)
 [![License](http://img.shields.io/:license-apache-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0.html)
 
 **jadx** - Dex to Java decompiler
 
 Command line and GUI tools for producing Java source code from Android Dex and Apk files
+
+:exclamation::exclamation::exclamation: Please note that in most cases **jadx** can't decompile all 100% of the code, so errors will occur. Check [Troubleshooting guide](https://github.com/skylot/jadx/wiki/Troubleshooting-Q&A#decompilation-issues) for workarounds
 
 **Main features:**
 - decompile Dalvik bytecode to java classes from APK, dex, aar, aab and zip files
@@ -21,15 +24,11 @@ Command line and GUI tools for producing Java source code from Android Dex and A
 - jump to declaration
 - find usage
 - full text search
-
-**Upcoming unstable features:**
-- smali debugger (thanks to [@LBJ-the-GOAT](https://github.com/LBJ-the-GOAT)), check [wiki page](https://github.com/skylot/jadx/wiki/Smali-debugger) for setup and usage
+- smali debugger, check [wiki page](https://github.com/skylot/jadx/wiki/Smali-debugger) for setup and usage
 
 See these features in action here: [jadx-gui features overview](https://github.com/skylot/jadx/wiki/jadx-gui-features-overview)
 
-
-![jadx-gui screenshot](https://i.imgur.com/h917IBZ.png)
-
+<img src="https://user-images.githubusercontent.com/118523/142730720-839f017e-38db-423e-b53f-39f5f0a0316f.png" width="700"/>
 
 ### Download
 - release from [github: ![Latest release](https://img.shields.io/github/release/skylot/jadx.svg)](https://github.com/skylot/jadx/releases/latest)
@@ -40,8 +39,8 @@ After download unpack zip file go to `bin` directory and run:
 - `jadx-gui` - UI version
 
 On Windows run `.bat` files with double-click\
-**Note:** ensure you have installed Java 8 or later 64-bit version.
-For windows you can download it from [adoptopenjdk.net](https://adoptopenjdk.net/releases.html?variant=openjdk11&jvmVariant=hotspot#x64_win) (select "Install JRE").
+**Note:** ensure you have installed Java 11 or later 64-bit version.
+For Windows, you can download it from [oracle.com](https://www.oracle.com/java/technologies/downloads/#jdk17-windows) (select x64 Installer).
 
 ### Install
 1. Arch linux
@@ -52,6 +51,9 @@ For windows you can download it from [adoptopenjdk.net](https://adoptopenjdk.net
     ```bash
         brew install jadx
     ```
+
+### Use jadx as a library
+You can use jadx in your java projects, check details on [wiki page](https://github.com/skylot/jadx/wiki/Use-jadx-as-a-library)
 
 ### Build from source
 JDK 8 or higher must be installed:
@@ -96,6 +98,7 @@ options:
   --deobf-rewrite-cfg                 - force to ignore and overwrite deobfuscation map file
   --deobf-use-sourcename              - use source file name as class name alias
   --deobf-parse-kotlin-metadata       - parse kotlin metadata to class and package names
+  --use-kotlin-methods-for-var-names  - use kotlin intrinsic methods to rename variables, values: disable, apply, apply-and-hide, default: apply
   --rename-flags                      - fix options (comma-separated list of):
                                          'case' - fix case sensitivity issues (according to --fs-case-sensitive option),
                                          'valid' - rename java identifiers to make them valid,
@@ -106,7 +109,9 @@ options:
   --cfg                               - save methods control flow graph to dot file
   --raw-cfg                           - save methods control flow graph (use raw instructions)
   -f, --fallback                      - make simple dump (using goto instead of 'if', 'for', etc)
-  --log-level                         - set log level, values: QUIET, PROGRESS, ERROR, WARN, INFO, DEBUG, default: PROGRESS
+  --use-dx                            - use dx/d8 to convert java bytecode
+  --comments-level                    - set code comments level, values: error, warn, info, debug, user-only, none, default: info
+  --log-level                         - set log level, values: quiet, progress, error, warn, info, debug, default: progress
   -v, --verbose                       - verbose output (set --log-level to DEBUG)
   -q, --quiet                         - turn off output (set --log-level to QUIET)
   --version                           - print jadx version

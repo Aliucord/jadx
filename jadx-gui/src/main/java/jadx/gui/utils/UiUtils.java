@@ -19,27 +19,28 @@ import javax.swing.Action;
 import javax.swing.Icon;
 import javax.swing.ImageIcon;
 import javax.swing.JComponent;
-import javax.swing.JDialog;
 import javax.swing.JOptionPane;
 import javax.swing.KeyStroke;
+import javax.swing.RootPaneContainer;
 import javax.swing.SwingUtilities;
 
 import org.intellij.lang.annotations.MagicConstant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.formdev.flatlaf.extras.FlatSVGIcon;
+
 import jadx.core.dex.info.AccessInfo;
 import jadx.core.dex.instructions.args.ArgType;
+import jadx.core.utils.Utils;
 import jadx.core.utils.exceptions.JadxRuntimeException;
 import jadx.gui.ui.codearea.AbstractCodeArea;
 
 public class UiUtils {
 	private static final Logger LOG = LoggerFactory.getLogger(UiUtils.class);
 
-	private static final ImageIcon ICON_STATIC = openIcon("static_co");
-	private static final ImageIcon ICON_FINAL = openIcon("final_co");
-	private static final ImageIcon ICON_ABSTRACT = openIcon("abstract_co");
-	private static final ImageIcon ICON_NATIVE = openIcon("native_co");
+	public static final ImageIcon ICON_STATIC = openSvgIcon("nodes/staticMark");
+	public static final ImageIcon ICON_FINAL = openSvgIcon("nodes/finalMark");
 
 	/**
 	 * The minimum about of memory in bytes we are trying to keep free, otherwise the application may
@@ -54,6 +55,21 @@ public class UiUtils {
 	public static final long MIN_FREE_MEMORY = calculateMinFreeMemory();
 
 	private UiUtils() {
+	}
+
+	public static FlatSVGIcon openSvgIcon(String name) {
+		String iconPath = "icons/" + name + ".svg";
+		FlatSVGIcon icon = new FlatSVGIcon(iconPath);
+		boolean found;
+		try {
+			found = icon.hasFound();
+		} catch (Exception e) {
+			throw new JadxRuntimeException("Failed to load icon: " + iconPath, e);
+		}
+		if (!found) {
+			throw new JadxRuntimeException("Icon not found: " + iconPath);
+		}
+		return icon;
 	}
 
 	public static ImageIcon openIcon(String name) {
@@ -94,7 +110,7 @@ public class UiUtils {
 	}
 
 	public static String escapeHtml(String str) {
-		return str.replace("<", "&lt;");
+		return str.replace("<", "&lt;").replace(">", "&gt;");
 	}
 
 	public static String typeStr(ArgType type) {
@@ -102,18 +118,41 @@ public class UiUtils {
 			return "null";
 		}
 		if (type.isObject()) {
-			String cls = type.toString();
-			int dot = cls.lastIndexOf('.');
-			if (dot != -1) {
-				return cls.substring(dot + 1);
-			} else {
-				return cls;
+			if (type.isGenericType()) {
+				return type.getObject();
 			}
+			ArgType wt = type.getWildcardType();
+			if (wt != null) {
+				ArgType.WildcardBound bound = type.getWildcardBound();
+				if (bound == ArgType.WildcardBound.UNBOUND) {
+					return bound.getStr();
+				}
+				return bound.getStr() + typeStr(wt);
+			}
+			String objName = objectShortName(type.getObject());
+			ArgType outerType = type.getOuterType();
+			if (outerType != null) {
+				return typeStr(outerType) + '.' + objName;
+			}
+			List<ArgType> genericTypes = type.getGenericTypes();
+			if (genericTypes != null) {
+				String generics = Utils.listToString(genericTypes, ", ", UiUtils::typeStr);
+				return objName + '<' + generics + '>';
+			}
+			return objName;
 		}
 		if (type.isArray()) {
 			return typeStr(type.getArrayElement()) + "[]";
 		}
 		return type.toString();
+	}
+
+	private static String objectShortName(String obj) {
+		int dot = obj.lastIndexOf('.');
+		if (dot != -1) {
+			return obj.substring(dot + 1);
+		}
+		return obj;
 	}
 
 	public static OverlayIcon makeIcon(AccessInfo af, Icon pub, Icon pri, Icon pro, Icon def) {
@@ -133,12 +172,6 @@ public class UiUtils {
 		}
 		if (af.isStatic()) {
 			overIcon.add(ICON_STATIC);
-		}
-		if (af.isAbstract()) {
-			overIcon.add(ICON_ABSTRACT);
-		}
-		if (af.isNative()) {
-			overIcon.add(ICON_NATIVE);
 		}
 		return overIcon;
 	}
@@ -220,13 +253,9 @@ public class UiUtils {
 		return CTRL_BNT_KEY;
 	}
 
-	public static void showMessageBox(Component parent, String msg) {
-		JOptionPane.showMessageDialog(parent, msg);
-	}
-
-	public static void addEscapeShortCutToDispose(JDialog dialog) {
+	public static <T extends Window & RootPaneContainer> void addEscapeShortCutToDispose(T window) {
 		KeyStroke stroke = KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0);
-		dialog.getRootPane().registerKeyboardAction(e -> dialog.dispose(), stroke, JComponent.WHEN_IN_FOCUSED_WINDOW);
+		window.getRootPane().registerKeyboardAction(e -> window.dispose(), stroke, JComponent.WHEN_IN_FOCUSED_WINDOW);
 	}
 
 	/**
@@ -257,6 +286,10 @@ public class UiUtils {
 			return defValue;
 		}
 		return envVal;
+	}
+
+	public static void showMessageBox(Component parent, String msg) {
+		JOptionPane.showMessageDialog(parent, msg);
 	}
 
 	public static void errorMessage(Component parent, String message) {

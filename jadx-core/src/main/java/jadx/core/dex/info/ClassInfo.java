@@ -7,6 +7,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import jadx.core.dex.instructions.args.ArgType;
+import jadx.core.dex.nodes.ClassNode;
 import jadx.core.dex.nodes.RootNode;
 import jadx.core.utils.exceptions.JadxRuntimeException;
 
@@ -114,6 +115,17 @@ public final class ClassInfo implements Comparable<ClassInfo> {
 			return true;
 		}
 		return parentClass != null && parentClass.hasAlias();
+	}
+
+	public boolean hasAliasPkg() {
+		if (alias != null) {
+			return !getPackage().equals(getAliasPkg());
+		}
+		return parentClass != null && parentClass.hasAliasPkg();
+	}
+
+	public void removeAlias() {
+		this.alias = null;
 	}
 
 	private void splitAndApplyNames(RootNode root, ArgType type, boolean canBeInner) {
@@ -234,8 +246,13 @@ public final class ClassInfo implements Comparable<ClassInfo> {
 	}
 
 	public void notInner(RootNode root) {
-		this.parentClass = null;
 		splitAndApplyNames(root, type, false);
+		this.parentClass = null;
+	}
+
+	public void convertToInner(ClassNode parent) {
+		splitAndApplyNames(parent.root(), type, true);
+		this.parentClass = parent.getClassInfo();
 	}
 
 	public void updateNames(RootNode root) {
