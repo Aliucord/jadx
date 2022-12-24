@@ -2,7 +2,7 @@ name: Build Artifacts
 
 on:
   push:
-    branches: [ master, build-test ]
+    branches: [ master ]
 
 jobs:
   build:
@@ -28,8 +28,10 @@ jobs:
         name: Build with Gradle
         env:
           TERM: dumb
+          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
         with:
-          arguments: clean dist copyExe
+          arguments: clean dist copyExe publish
 
       - name: Save bundle artifact
         uses: actions/upload-artifact@v3

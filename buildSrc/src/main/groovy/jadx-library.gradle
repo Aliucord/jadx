@@ -54,12 +54,10 @@ publishing {
 	}
 	repositories {
 		maven {
-			def releasesRepoUrl = uri('https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/')
-			def snapshotsRepoUrl = uri('https://s01.oss.sonatype.org/content/repositories/snapshots/')
-			url = version.endsWith('SNAPSHOT') ? snapshotsRepoUrl : releasesRepoUrl
+			url = uri('https://maven.aliucord.com/snapshots')
 			credentials {
-				username = project.properties['ossrhUser'].toString()
-				password = project.properties['ossrhPassword'].toString()
+				username = System.getenv("MAVEN_USERNAME")
+				password = System.getenv("MAVEN_PASSWORD")
 			}
 		}
 	}
