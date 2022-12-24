@@ -71,7 +71,8 @@ public class AnnotationGen {
 		}
 		for (IAnnotation a : aList.getAll()) {
 			String aCls = a.getAnnotationClass();
-			if (!aCls.equals(Consts.OVERRIDE_ANNOTATION) && (cls.root().getArgs().isGenerateKotlinMetadata() || !aCls.equals(KotlinMetadataUtils.KOTLIN_METADATA_ANNOTATION))) {
+			if (!aCls.equals(Consts.OVERRIDE_ANNOTATION)
+					&& (cls.root().getArgs().isGenerateKotlinMetadata() || !aCls.equals(KotlinMetadataUtils.KOTLIN_METADATA_ANNOTATION))) {
 				code.startLine();
 				formatAnnotation(code, a);
 			}
