@@ -92,6 +92,9 @@ public class JadxCLIArgs {
 	@Parameter(names = "--no-finally", description = "don't extract finally block")
 	protected boolean extractFinally = true;
 
+	@Parameter(names = { "--no-generate-kotlin-metadata" }, description = "disable generating kotlin metadata")
+	protected boolean generateKotlinMetadata = true;
+
 	@Parameter(names = "--no-replace-consts", description = "don't replace constant value with matching constant field")
 	protected boolean replaceConsts = true;
 
@@ -286,6 +289,7 @@ public class JadxCLIArgs {
 		args.setInlineAnonymousClasses(inlineAnonymousClasses);
 		args.setInlineMethods(inlineMethods);
 		args.setExtractFinally(extractFinally);
+		args.setGenerateKotlinMetadata(generateKotlinMetadata);
 		args.setRenameFlags(renameFlags);
 		args.setFsCaseSensitive(fsCaseSensitive);
 		args.setCommentsLevel(commentsLevel);

@@ -20,7 +20,7 @@ import jadx.core.utils.Utils;
 public class KotlinMetadataUtils {
 	private static final Logger LOG = LoggerFactory.getLogger(KotlinMetadataUtils.class);
 
-	private static final String KOTLIN_METADATA_ANNOTATION = "Lkotlin/Metadata;";
+	public static final String KOTLIN_METADATA_ANNOTATION = "Lkotlin/Metadata;";
 	private static final String KOTLIN_METADATA_D2_PARAMETER = "d2";
 
 	/**

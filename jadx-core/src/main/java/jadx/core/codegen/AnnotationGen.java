@@ -25,6 +25,7 @@ import jadx.core.dex.nodes.MethodNode;
 import jadx.core.dex.nodes.RootNode;
 import jadx.core.utils.StringUtils;
 import jadx.core.utils.exceptions.JadxRuntimeException;
+import jadx.core.utils.kotlin.KotlinMetadataUtils;
 
 public class AnnotationGen {
 
@@ -70,7 +71,7 @@ public class AnnotationGen {
 		}
 		for (IAnnotation a : aList.getAll()) {
 			String aCls = a.getAnnotationClass();
-			if (!aCls.equals(Consts.OVERRIDE_ANNOTATION)) {
+			if (!aCls.equals(Consts.OVERRIDE_ANNOTATION) && (cls.root().getArgs().isGenerateKotlinMetadata() || !aCls.equals(KotlinMetadataUtils.KOTLIN_METADATA_ANNOTATION))) {
 				code.startLine();
 				formatAnnotation(code, a);
 			}
