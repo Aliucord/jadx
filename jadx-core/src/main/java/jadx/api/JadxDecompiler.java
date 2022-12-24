@@ -101,6 +101,8 @@ public final class JadxDecompiler implements Closeable {
 
 	private final List<ILoadResult> customLoads = new ArrayList<>();
 
+	private SaveCode.SaveToJar saveTojar = null;
+
 	public JadxDecompiler() {
 		this(new JadxArgs());
 	}
@@ -232,6 +234,11 @@ public final class JadxDecompiler implements Closeable {
 			LOG.error("Save interrupted", e);
 			Thread.currentThread().interrupt();
 		}
+
+		if (saveTojar != null) {
+			saveTojar.close();
+			saveTojar = null;
+		}
 	}
 
 	public void saveSources() {
@@ -251,6 +258,11 @@ public final class JadxDecompiler implements Closeable {
 		} catch (InterruptedException e) {
 			LOG.error("Save interrupted", e);
 			Thread.currentThread().interrupt();
+		}
+
+		if (saveTojar != null) {
+			saveTojar.close();
+			saveTojar = null;
 		}
 	}
 
@@ -330,6 +342,11 @@ public final class JadxDecompiler implements Closeable {
 	}
 
 	private void appendSourcesSave(List<Runnable> tasks, File outDir) {
+		boolean isJar = outDir.getName().endsWith(".jar");
+		if (isJar && saveTojar == null) {
+			saveTojar = new SaveCode.SaveToJar(outDir);
+		}
+
 		Predicate<String> classFilter = args.getClassFilter();
 		List<JavaClass> classes = getClasses();
 		List<JavaClass> processQueue = new ArrayList<>(classes.size());
@@ -353,17 +370,24 @@ public final class JadxDecompiler implements Closeable {
 			throw new JadxRuntimeException("Decompilation batches build failed", e);
 		}
 		for (List<JavaClass> decompileBatch : batches) {
-			tasks.add(() -> {
+			Runnable runnable = () -> {
 				for (JavaClass cls : decompileBatch) {
 					try {
 						ClassNode clsNode = cls.getClassNode();
 						ICodeInfo code = clsNode.getCode();
-						SaveCode.save(outDir, clsNode, code);
+						SaveCode.save(outDir, clsNode, code, saveTojar);
 					} catch (Exception e) {
 						LOG.error("Error saving class: {}", cls, e);
 					}
 				}
-			});
+			};
+
+			if (isJar) {
+				// jars can't be multithreaded?
+				runnable.run();
+			} else {
+				tasks.add(runnable);
+			}
 		}
 	}
 

@@ -92,7 +92,7 @@ public class JadxArgsValidator {
 	}
 
 	private static void checkDir(File dir, String desc) {
-		if (dir != null && dir.exists() && !dir.isDirectory()) {
+		if (dir != null && dir.exists() && (!dir.isDirectory() && !dir.getName().endsWith(".jar"))) {
 			throw new JadxArgsValidateException(desc + " directory exists as file " + dir);
 		}
 	}
