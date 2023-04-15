@@ -5,7 +5,7 @@ plugins {
 }
 
 
-group = 'io.github.skylot'
+group = 'com.aliucord.jadx'
 version = jadxVersion
 
 java {
