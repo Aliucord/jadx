@@ -53,6 +53,7 @@ public class JadxArgs {
 	private boolean extractFinally = true;
 	private boolean inlineAnonymousClasses = true;
 	private boolean inlineMethods = true;
+	private boolean allowInlineKotlinLambda = true;
 	private boolean generateKotlinMetadata = true;
 
 	private boolean skipResources = false;
@@ -262,6 +263,14 @@ public class JadxArgs {
 
 	public void setInlineMethods(boolean inlineMethods) {
 		this.inlineMethods = inlineMethods;
+	}
+
+	public boolean isAllowInlineKotlinLambda() {
+		return allowInlineKotlinLambda;
+	}
+
+	public void setAllowInlineKotlinLambda(boolean allowInlineKotlinLambda) {
+		this.allowInlineKotlinLambda = allowInlineKotlinLambda;
 	}
 
 	public boolean isExtractFinally() {

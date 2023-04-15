@@ -13,14 +13,13 @@ import java.util.stream.Collectors;
 
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import jadx.api.DecompilationMode;
 import jadx.api.ICodeCache;
 import jadx.api.ICodeInfo;
 import jadx.api.ICodeWriter;
 import jadx.api.JadxArgs;
+import jadx.api.JavaClass;
 import jadx.api.impl.SimpleCodeInfo;
 import jadx.api.plugins.input.data.IClassData;
 import jadx.api.plugins.input.data.IFieldData;
@@ -55,8 +54,6 @@ import static jadx.core.dex.nodes.ProcessState.LOADED;
 import static jadx.core.dex.nodes.ProcessState.NOT_LOADED;
 
 public class ClassNode extends NotificationAttrNode implements ILoadable, ICodeNode, Comparable<ClassNode> {
-	private static final Logger LOG = LoggerFactory.getLogger(ClassNode.class);
-
 	private final RootNode root;
 	private final IClassData clsData;
 
@@ -99,6 +96,8 @@ public class ClassNode extends NotificationAttrNode implements ILoadable, ICodeN
 
 	// cache maps
 	private Map<MethodInfo, MethodNode> mthInfoMap = Collections.emptyMap();
+
+	private JavaClass javaNode;
 
 	public ClassNode(RootNode root, IClassData cls) {
 		this.root = root;
@@ -171,10 +170,10 @@ public class ClassNode extends NotificationAttrNode implements ILoadable, ICodeN
 		return ArgType.object(superType);
 	}
 
-	public void updateGenericClsData(ArgType superClass, List<ArgType> interfaces, List<ArgType> generics) {
+	public void updateGenericClsData(List<ArgType> generics, ArgType superClass, List<ArgType> interfaces) {
+		this.generics = generics;
 		this.superClass = superClass;
 		this.interfaces = interfaces;
-		this.generics = generics;
 	}
 
 	private static void processAttributes(ClassNode cls) {
@@ -833,6 +832,14 @@ public class ClassNode extends NotificationAttrNode implements ILoadable, ICodeN
 	@Override
 	public String getInputFileName() {
 		return clsData == null ? "synthetic" : clsData.getInputFileName();
+	}
+
+	public JavaClass getJavaNode() {
+		return javaNode;
+	}
+
+	public void setJavaNode(JavaClass javaNode) {
+		this.javaNode = javaNode;
 	}
 
 	@Override
