@@ -3,24 +3,30 @@ package jadx.gui.settings.data;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 import org.jetbrains.annotations.Nullable;
 
 import jadx.api.data.impl.JadxCodeData;
+import jadx.gui.search.providers.ResourceFilter;
 
 public class ProjectData {
-
-	private int projectVersion = 1;
+	private int projectVersion = 2;
 	private List<Path> files = new ArrayList<>();
-	private List<String[]> treeExpansions = new ArrayList<>();
+	private List<String> treeExpansionsV2 = new ArrayList<>();
 	private JadxCodeData codeData = new JadxCodeData();
 	private List<TabViewState> openTabs = Collections.emptyList();
-	private int activeTab = -1;
-	private @Nullable Path cacheDir;
+	private @Nullable Path mappingsPath;
+	private @Nullable String cacheDir; // don't use relative path adapter
 	private boolean enableLiveReload = false;
 	private List<String> searchHistory = new ArrayList<>();
+	private String searchResourcesFilter = ResourceFilter.DEFAULT_STR;
+	private int searchResourcesSizeLimit = 0; // in MB
+
+	protected Map<String, String> pluginOptions = new HashMap<>();
 
 	public List<Path> getFiles() {
 		return files;
@@ -30,12 +36,12 @@ public class ProjectData {
 		this.files = Objects.requireNonNull(files);
 	}
 
-	public List<String[]> getTreeExpansions() {
-		return treeExpansions;
+	public List<String> getTreeExpansionsV2() {
+		return treeExpansionsV2;
 	}
 
-	public void setTreeExpansions(List<String[]> treeExpansions) {
-		this.treeExpansions = treeExpansions;
+	public void setTreeExpansionsV2(List<String> treeExpansionsV2) {
+		this.treeExpansionsV2 = treeExpansionsV2;
 	}
 
 	public JadxCodeData getCodeData() {
@@ -58,11 +64,6 @@ public class ProjectData {
 		return openTabs;
 	}
 
-	/**
-	 *
-	 * @param openTabs
-	 * @return <code>true></code> if a change was saved
-	 */
 	public boolean setOpenTabs(List<TabViewState> openTabs) {
 		if (this.openTabs.equals(openTabs)) {
 			return false;
@@ -71,29 +72,20 @@ public class ProjectData {
 		return true;
 	}
 
-	public int getActiveTab() {
-		return activeTab;
-	}
-
-	/**
-	 *
-	 * @param activeTab
-	 * @return <code>true></code> if a change was saved
-	 */
-	public boolean setActiveTab(int activeTab) {
-		if (this.activeTab == activeTab) {
-			return false;
-		}
-		this.activeTab = activeTab;
-		return true;
-	}
-
 	@Nullable
-	public Path getCacheDir() {
+	public Path getMappingsPath() {
+		return mappingsPath;
+	}
+
+	public void setMappingsPath(Path mappingsPath) {
+		this.mappingsPath = mappingsPath;
+	}
+
+	public @Nullable String getCacheDir() {
 		return cacheDir;
 	}
 
-	public void setCacheDir(Path cacheDir) {
+	public void setCacheDir(@Nullable String cacheDir) {
 		this.cacheDir = cacheDir;
 	}
 
@@ -111,5 +103,25 @@ public class ProjectData {
 
 	public void setSearchHistory(List<String> searchHistory) {
 		this.searchHistory = searchHistory;
+	}
+
+	public String getSearchResourcesFilter() {
+		return searchResourcesFilter;
+	}
+
+	public void setSearchResourcesFilter(String searchResourcesFilter) {
+		this.searchResourcesFilter = searchResourcesFilter;
+	}
+
+	public int getSearchResourcesSizeLimit() {
+		return searchResourcesSizeLimit;
+	}
+
+	public void setSearchResourcesSizeLimit(int searchResourcesSizeLimit) {
+		this.searchResourcesSizeLimit = searchResourcesSizeLimit;
+	}
+
+	public Map<String, String> getPluginOptions() {
+		return pluginOptions;
 	}
 }

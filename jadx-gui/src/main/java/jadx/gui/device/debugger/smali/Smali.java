@@ -17,6 +17,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import jadx.api.ICodeInfo;
+import jadx.api.JadxArgs;
 import jadx.api.plugins.input.data.AccessFlags;
 import jadx.api.plugins.input.data.AccessFlagsScope;
 import jadx.api.plugins.input.data.ICatch;
@@ -37,7 +38,6 @@ import jadx.api.plugins.input.insns.InsnData;
 import jadx.api.plugins.input.insns.InsnIndexType;
 import jadx.api.plugins.input.insns.Opcode;
 import jadx.api.plugins.input.insns.custom.ISwitchPayload;
-import jadx.core.codegen.TypeGen;
 import jadx.core.dex.attributes.AttributeStorage;
 import jadx.core.dex.instructions.IndexInsnNode;
 import jadx.core.dex.instructions.InsnDecoder;
@@ -48,6 +48,7 @@ import jadx.core.dex.instructions.args.RegisterArg;
 import jadx.core.dex.nodes.ClassNode;
 import jadx.core.dex.nodes.InsnNode;
 import jadx.core.dex.nodes.MethodNode;
+import jadx.core.utils.StringUtils;
 import jadx.core.utils.Utils;
 import jadx.core.utils.exceptions.JadxRuntimeException;
 
@@ -184,16 +185,14 @@ public class Smali {
 			smali.startLine(String.format("###### Class %s is created by jadx", cls.getFullName()));
 			return;
 		}
-		AttributeStorage attributes = new AttributeStorage();
-		attributes.add(clsData.getAttributes());
-
+		AttributeStorage clsAttributes = AttributeStorage.fromList(clsData.getAttributes());
 		smali.startLine("Class: " + clsData.getType())
 				.startLine("AccessFlags: " + AccessFlags.format(clsData.getAccessFlags(), AccessFlagsScope.CLASS))
 				.startLine("SuperType: " + clsData.getSuperType())
 				.startLine("Interfaces: " + clsData.getInterfacesTypes())
-				.startLine("SourceFile: " + attributes.get(JadxAttrType.SOURCE_FILE));
+				.startLine("SourceFile: " + clsAttributes.get(JadxAttrType.SOURCE_FILE));
 
-		AnnotationsAttr annotationsAttr = attributes.get(JadxAttrType.ANNOTATION_LIST);
+		AnnotationsAttr annotationsAttr = clsAttributes.get(JadxAttrType.ANNOTATION_LIST);
 		if (annotationsAttr != null) {
 			Collection<IAnnotation> annos = annotationsAttr.getList();
 			if (!annos.isEmpty()) {
@@ -450,7 +449,8 @@ public class Smali {
 		smali.add(')');
 		smali.add(methodRef.getReturnType());
 
-		AnnotationsAttr annotationsAttr = new AttributeStorage(mth.getAttributes()).get(JadxAttrType.ANNOTATION_LIST);
+		AttributeStorage mthAttributes = AttributeStorage.fromList(mth.getAttributes());
+		AnnotationsAttr annotationsAttr = mthAttributes.get(JadxAttrType.ANNOTATION_LIST);
 		if (annotationsAttr != null && !annotationsAttr.isEmpty()) {
 			smali.incIndent();
 			writeAnnotations(smali, annotationsAttr.getList());
@@ -593,6 +593,7 @@ public class Smali {
 	}
 
 	private void writeEncodedValue(SmaliWriter smali, EncodedValue value, boolean wrapArray) {
+		StringUtils stringUtils = smali.getClassNode().root().getStringUtils();
 		switch (value.getType()) {
 			case ENCODED_ARRAY:
 				smali.add("{");
@@ -624,28 +625,28 @@ public class Smali {
 				writeAnnotation(smali, (IAnnotation) value.getValue());
 				break;
 			case ENCODED_BYTE:
-				smali.add(TypeGen.formatByte((Byte) value.getValue(), false));
+				smali.add(stringUtils.formatByte((Byte) value.getValue(), false));
 				break;
 			case ENCODED_SHORT:
-				smali.add(TypeGen.formatShort((Short) value.getValue(), false));
+				smali.add(stringUtils.formatShort((Short) value.getValue(), false));
 				break;
 			case ENCODED_CHAR:
-				smali.add(smali.getClassNode().root().getStringUtils().unescapeChar((Character) value.getValue()));
+				smali.add(stringUtils.unescapeChar((Character) value.getValue()));
 				break;
 			case ENCODED_INT:
-				smali.add(TypeGen.formatInteger((Integer) value.getValue(), false));
+				smali.add(stringUtils.formatInteger((Integer) value.getValue(), false));
 				break;
 			case ENCODED_LONG:
-				smali.add(TypeGen.formatLong((Long) value.getValue(), false));
+				smali.add(stringUtils.formatLong((Long) value.getValue(), false));
 				break;
 			case ENCODED_FLOAT:
-				smali.add(TypeGen.formatFloat((Float) value.getValue()));
+				smali.add(StringUtils.formatFloat((Float) value.getValue()));
 				break;
 			case ENCODED_DOUBLE:
-				smali.add(TypeGen.formatDouble((Double) value.getValue()));
+				smali.add(StringUtils.formatDouble((Double) value.getValue()));
 				break;
 			case ENCODED_STRING:
-				smali.add(smali.getClassNode().root().getStringUtils().unescapeString((String) value.getValue()));
+				smali.add(stringUtils.unescapeString((String) value.getValue()));
 				break;
 			case ENCODED_TYPE:
 				smali.add(ArgType.parse((String) value.getValue()) + ".class");
@@ -786,7 +787,7 @@ public class Smali {
 		int lineStart = getInsnColStart();
 		lineStart += CODE_OFFSET_COLUMN_WIDTH + 1 + 1; // plus 1s for space and the ':'
 		String basicIndent = new String(new byte[lineStart]).replace("\0", " ");
-		String indent = SmaliWriter.INDENT_STR + basicIndent;
+		String indent = JadxArgs.DEFAULT_INDENT_STR + basicIndent;
 		int[] keys = payload.getKeys();
 		int[] targets = payload.getTargets();
 		Integer switchOffset = line.payloadOffsetMap.get(insn.getOffset());
@@ -955,7 +956,7 @@ public class Smali {
 				} else if (obj instanceof Integer) {
 					innerMap.put(tip, ((int) obj) + 1);
 				} else if (obj instanceof List) {
-					if (!extra.equals("")) {
+					if (!extra.isEmpty()) {
 						List<String> extras = (List<String>) obj;
 						extras.add(extra);
 					}
@@ -1072,7 +1073,7 @@ public class Smali {
 			field.accessFlag = AccessFlags.format(f.getAccessFlags(), FIELD);
 			field.name = f.getName();
 			field.type = f.getType();
-			field.attributes = new AttributeStorage(f.getAttributes());
+			field.attributes = AttributeStorage.fromList(f.getAttributes());
 			return field;
 		}
 	}

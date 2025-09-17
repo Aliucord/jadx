@@ -7,10 +7,10 @@ import org.junit.jupiter.api.Test;
 
 import jadx.api.JadxArgs.RenameEnum;
 import jadx.cli.JadxCLIArgs.RenameConverter;
+import jadx.core.utils.exceptions.JadxArgsValidateException;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class RenameConverterTest {
 
@@ -24,25 +24,24 @@ public class RenameConverterTest {
 	@Test
 	public void all() {
 		Set<RenameEnum> set = converter.convert("all");
-		assertEquals(3, set.size());
-		assertTrue(set.contains(RenameEnum.CASE));
-		assertTrue(set.contains(RenameEnum.VALID));
-		assertTrue(set.contains(RenameEnum.PRINTABLE));
+		assertThat(set).hasSize(3);
+		assertThat(set).contains(RenameEnum.CASE);
+		assertThat(set).contains(RenameEnum.VALID);
+		assertThat(set).contains(RenameEnum.PRINTABLE);
 	}
 
 	@Test
 	public void none() {
 		Set<RenameEnum> set = converter.convert("none");
-		assertTrue(set.isEmpty());
+		assertThat(set).isEmpty();
 	}
 
 	@Test
 	public void wrong() {
-		IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+		JadxArgsValidateException thrown = assertThrows(JadxArgsValidateException.class,
 				() -> converter.convert("wrong"),
 				"Expected convert() to throw, but it didn't");
 
-		assertEquals("'wrong' is unknown for parameter someParam, possible values are case, valid, printable",
-				thrown.getMessage());
+		assertThat(thrown.getMessage()).isEqualTo("'wrong' is unknown for parameter someParam, possible values are case, valid, printable");
 	}
 }

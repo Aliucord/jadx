@@ -40,10 +40,9 @@ import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import io.reactivex.annotations.Nullable;
 
 import jadx.core.utils.StringUtils;
 import jadx.gui.device.debugger.DebugController;
@@ -445,7 +444,7 @@ public class JDebuggerPanel extends JPanel {
 	}
 
 	public void scrollToSmaliLine(JClass cls, int pos, boolean debugMode) {
-		SwingUtilities.invokeLater(() -> getMainWindow().getTabbedPane().smaliJump(cls, pos, debugMode));
+		SwingUtilities.invokeLater(() -> getMainWindow().getTabsController().smaliJump(cls, pos, debugMode));
 	}
 
 	public void resetAllDebuggingInfo() {

@@ -3,16 +3,16 @@ package jadx.gui.ui.codearea;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionAdapter;
 
-import javax.swing.text.Highlighter;
+import javax.swing.text.Caret;
 
 import org.fife.ui.rsyntaxtextarea.Token;
-import org.fife.ui.rsyntaxtextarea.TokenTypes;
 import org.fife.ui.rtextarea.SmartHighlightPainter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import jadx.api.JavaNode;
 import jadx.gui.treemodel.JNode;
+import jadx.gui.ui.MainWindow;
 import jadx.gui.utils.JNodeCache;
 
 class MouseHoverHighlighter extends MouseMotionAdapter {
@@ -20,7 +20,7 @@ class MouseHoverHighlighter extends MouseMotionAdapter {
 
 	private final CodeArea codeArea;
 	private final CodeLinkGenerator codeLinkGenerator;
-	private final Highlighter.HighlightPainter highlighter;
+	private final SmartHighlightPainter highlighter;
 
 	private Object tag;
 	private int highlightedTokenOffset = -1;
@@ -28,7 +28,12 @@ class MouseHoverHighlighter extends MouseMotionAdapter {
 	public MouseHoverHighlighter(CodeArea codeArea, CodeLinkGenerator codeLinkGenerator) {
 		this.codeArea = codeArea;
 		this.codeLinkGenerator = codeLinkGenerator;
-		this.highlighter = new SmartHighlightPainter(codeArea.getMarkOccurrencesColor());
+		this.highlighter = new SmartHighlightPainter();
+		loadSettings();
+	}
+
+	public void loadSettings() {
+		highlighter.setPaint(codeArea.getMarkOccurrencesColor());
 	}
 
 	@Override
@@ -42,9 +47,14 @@ class MouseHoverHighlighter extends MouseMotionAdapter {
 		if (e.getModifiersEx() != 0) {
 			return false;
 		}
+		Caret caret = codeArea.getCaret();
+		if (caret.getDot() != caret.getMark()) {
+			// selection in action, highlight will interfere with selection
+			return false;
+		}
 		try {
 			Token token = codeArea.viewToToken(e.getPoint());
-			if (token == null || token.getType() != TokenTypes.IDENTIFIER) {
+			if (token == null) {
 				return false;
 			}
 			int tokenOffset = token.getOffset();
@@ -77,11 +87,12 @@ class MouseHoverHighlighter extends MouseMotionAdapter {
 	}
 
 	private void updateToolTip(JavaNode node) {
-		if (node == null) {
+		MainWindow mainWindow = codeArea.getMainWindow();
+		if (node == null || mainWindow.getSettings().isDisableTooltipOnHover()) {
 			codeArea.setToolTipText(null);
 			return;
 		}
-		JNodeCache nodeCache = codeArea.getMainWindow().getCacheObject().getNodeCache();
+		JNodeCache nodeCache = mainWindow.getCacheObject().getNodeCache();
 		JNode jNode = nodeCache.makeFrom(node);
 		codeArea.setToolTipText(jNode.getTooltip());
 	}

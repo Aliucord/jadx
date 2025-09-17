@@ -52,7 +52,7 @@ public final class DebugController implements SmaliDebugger.SuspendListener, IDe
 
 	private JDebuggerPanel debuggerPanel;
 	private SmaliDebugger debugger;
-	private ArtAdapter.Debugger art;
+	private ArtAdapter.IArtAdapter art;
 	private final CurrentInfo cur = new CurrentInfo();
 
 	private BreakpointStore bpStore;
@@ -113,11 +113,12 @@ public final class DebugController implements SmaliDebugger.SuspendListener, IDe
 	}
 
 	private void stopAtOnCreate() {
-		JClass mainActivity = DbgUtils.searchMainActivity(debuggerPanel.getMainWindow());
-		if (mainActivity == null) {
+		DbgUtils.AppData appData = DbgUtils.parseAppData(debuggerPanel.getMainWindow());
+		if (appData == null) {
 			debuggerPanel.log("Failed to set breakpoint at onCreate, you have to do it yourself.");
 			return;
 		}
+		JClass mainActivity = DbgUtils.getJClass(appData.getMainActivityCls(), debuggerPanel.getMainWindow());
 		lazyQueue.execute(() -> openMainActivityTab(mainActivity));
 		String clsSig = DbgUtils.getRawFullName(mainActivity);
 		try {
@@ -217,15 +218,11 @@ public final class DebugController implements SmaliDebugger.SuspendListener, IDe
 
 	@Override
 	public String getProcessName() {
-		String pkg = DbgUtils.searchPackageName(debuggerPanel.getMainWindow());
-		if (pkg.isEmpty()) {
+		DbgUtils.AppData appData = DbgUtils.parseAppData(debuggerPanel.getMainWindow());
+		if (appData == null) {
 			return "";
 		}
-		JClass cls = DbgUtils.searchMainActivity(debuggerPanel.getMainWindow());
-		if (cls == null) {
-			return "";
-		}
-		return pkg + "/" + cls.getCls().getClassNode().getClassInfo().getFullName();
+		return appData.getProcessName();
 	}
 
 	private RuntimeType castType(ArgType type) {
@@ -409,7 +406,7 @@ public final class DebugController implements SmaliDebugger.SuspendListener, IDe
 		for (RegisterObserver.Info info : list) {
 			RegTreeNode reg = cur.frame.getRegNodes().get(info.getSmaliRegNum());
 			if (info.isLoad()) {
-				applyDbgInfo(reg, info.getInfo());
+				applyDbgInfo(reg, info.getName(), info.getType());
 			} else {
 				reg.setAlias("");
 				reg.setAbsoluteType(false);
@@ -552,7 +549,7 @@ public final class DebugController implements SmaliDebugger.SuspendListener, IDe
 		} catch (SmaliDebuggerException e) {
 			logErr(e);
 		}
-		if (frames.size() == 0) {
+		if (frames.isEmpty()) {
 			return null;
 		}
 		List<FrameNode> frameEleList = new ArrayList<>(frames.size());
@@ -671,7 +668,7 @@ public final class DebugController implements SmaliDebugger.SuspendListener, IDe
 	private void fetchAllRegisters(FrameNode frame) {
 		List<SmaliRegister> regs = cur.regAdapter.getInitializedList(frame.getCodeOffset());
 		for (SmaliRegister reg : regs) {
-			Entry<String, String> info = cur.regAdapter.getInfo(reg.getRuntimeRegNum(), frame.getCodeOffset());
+			RuntimeVarInfo info = cur.regAdapter.getInfo(reg.getRuntimeRegNum(), frame.getCodeOffset());
 			RegTreeNode regNode = frame.getRegNodes().get(reg.getRegNum());
 			if (info != null) {
 				applyDbgInfo(regNode, info);
@@ -680,9 +677,13 @@ public final class DebugController implements SmaliDebugger.SuspendListener, IDe
 		}
 	}
 
-	private void applyDbgInfo(RegTreeNode rn, Entry<String, String> info) {
-		rn.setAlias(info.getKey());
-		rn.updateType(info.getValue());
+	private void applyDbgInfo(RegTreeNode rn, RuntimeVarInfo info) {
+		applyDbgInfo(rn, info.getName(), info.getType());
+	}
+
+	private void applyDbgInfo(RegTreeNode rn, String alias, String type) {
+		rn.setAlias(alias);
+		rn.updateType(type);
 		rn.setAbsoluteType(true);
 	}
 
@@ -877,7 +878,9 @@ public final class DebugController implements SmaliDebugger.SuspendListener, IDe
 					cur.regAdapter = regAdaMap.computeIfAbsent(cur.mthFullID,
 							k -> RegisterObserver.merge(
 									getRuntimeDebugInfo(cur.frame),
-									getRegisterList()));
+									getSmaliRegisterList(),
+									art,
+									cur.mthFullID));
 
 					if (cur.smali.getRegCount(cur.mthFullID) > 0) {
 						updateAllRegisters(cur.frame);
@@ -889,7 +892,7 @@ public final class DebugController implements SmaliDebugger.SuspendListener, IDe
 		});
 	}
 
-	private List<SmaliRegister> getRegisterList() {
+	private List<SmaliRegister> getSmaliRegisterList() {
 		int regCount = cur.smali.getRegCount(cur.mthFullID);
 		int paramStart = cur.smali.getParamRegStart(cur.mthFullID);
 		List<SmaliRegister> srs = cur.smali.getRegisterList(cur.mthFullID);

@@ -6,6 +6,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.Objects;
 
+import javax.swing.JPopupMenu;
 import javax.swing.event.PopupMenuEvent;
 
 import org.fife.ui.rsyntaxtextarea.RSyntaxDocument;
@@ -23,13 +24,17 @@ import jadx.gui.JadxWrapper;
 import jadx.gui.settings.JadxProject;
 import jadx.gui.treemodel.JClass;
 import jadx.gui.treemodel.JNode;
+import jadx.gui.treemodel.JResource;
 import jadx.gui.ui.MainWindow;
+import jadx.gui.ui.action.*;
+import jadx.gui.ui.codearea.mode.JCodeMode;
 import jadx.gui.ui.panel.ContentPanel;
 import jadx.gui.utils.CaretPositionFix;
 import jadx.gui.utils.DefaultPopupMenuListener;
 import jadx.gui.utils.JNodeCache;
 import jadx.gui.utils.JumpPosition;
 import jadx.gui.utils.UiUtils;
+import jadx.gui.utils.shortcut.ShortcutsController;
 
 /**
  * The {@link AbstractCodeArea} implementation used for displaying Java code and text based
@@ -41,17 +46,25 @@ public final class CodeArea extends AbstractCodeArea {
 	private static final long serialVersionUID = 6312736869579635796L;
 
 	private @Nullable ICodeInfo cachedCodeInfo;
+	private @Nullable MouseHoverHighlighter mouseHoverHighlighter;
+	private final ShortcutsController shortcutsController;
 
 	CodeArea(ContentPanel contentPanel, JNode node) {
 		super(contentPanel, node);
+		this.shortcutsController = getMainWindow().getShortcutsController();
+
 		setSyntaxEditingStyle(node.getSyntaxName());
-		boolean isJavaCode = node instanceof JClass;
+		boolean isJavaCode = isCodeNode();
 		if (isJavaCode) {
 			((RSyntaxDocument) getDocument()).setSyntaxStyle(new JadxTokenMaker(this));
-			addMenuItems();
+		}
+
+		if (node instanceof JResource && node.makeString().endsWith(".json")) {
+			addMenuForJsonFile();
 		}
 
 		setHyperlinksEnabled(true);
+		setCodeFoldingEnabled(true);
 		setLinkScanningMask(InputEvent.CTRL_DOWN_MASK);
 		CodeLinkGenerator codeLinkGenerator = new CodeLinkGenerator(this);
 		setLinkGenerator(codeLinkGenerator);
@@ -59,26 +72,38 @@ public final class CodeArea extends AbstractCodeArea {
 			@Override
 			public void mouseClicked(MouseEvent e) {
 				if (e.isControlDown() || jumpOnDoubleClick(e)) {
-					navToDecl(e.getPoint(), codeLinkGenerator);
+					navToDecl(e.getPoint());
 				}
 			}
 		});
 
 		if (isJavaCode) {
-			addMouseMotionListener(new MouseHoverHighlighter(this, codeLinkGenerator));
+			mouseHoverHighlighter = new MouseHoverHighlighter(this, codeLinkGenerator);
+			addMouseMotionListener(mouseHoverHighlighter);
 		}
+	}
+
+	@Override
+	public void loadSettings() {
+		super.loadSettings();
+		if (mouseHoverHighlighter != null) {
+			mouseHoverHighlighter.loadSettings();
+		}
+	}
+
+	public boolean isCodeNode() {
+		return node instanceof JClass || node instanceof JCodeMode;
 	}
 
 	private boolean jumpOnDoubleClick(MouseEvent e) {
 		return e.getClickCount() == 2 && getMainWindow().getSettings().isJumpOnDoubleClick();
 	}
 
-	@SuppressWarnings("deprecation")
-	private void navToDecl(Point point, CodeLinkGenerator codeLinkGenerator) {
-		int offs = viewToModel(point);
-		JNode node = getJNodeAtOffset(codeLinkGenerator.getLinkSourceOffset(offs));
+	private void navToDecl(Point point) {
+		int offs = viewToModel2D(point);
+		JNode node = getJNodeAtOffset(adjustOffsetForWordToken(offs));
 		if (node != null) {
-			contentPanel.getTabbedPane().codeJump(node);
+			contentPanel.getTabsController().codeJump(node);
 		}
 	}
 
@@ -99,6 +124,7 @@ public final class CodeArea extends AbstractCodeArea {
 		if (getText().isEmpty()) {
 			setText(getCodeInfo().getCodeStr());
 			setCaretPosition(0);
+			setLoaded();
 		}
 	}
 
@@ -108,10 +134,21 @@ public final class CodeArea extends AbstractCodeArea {
 		setText(getCodeInfo().getCodeStr());
 	}
 
-	private void addMenuItems() {
-		JNodePopupBuilder popup = new JNodePopupBuilder(this, getPopupMenu());
+	@Override
+	protected JPopupMenu createPopupMenu() {
+		JPopupMenu popup = super.createPopupMenu();
+		if (node instanceof JClass) {
+			appendCodeMenuItems(popup);
+		}
+		return popup;
+	}
+
+	private void appendCodeMenuItems(JPopupMenu popupMenu) {
+		ShortcutsController shortcutsController = getMainWindow().getShortcutsController();
+		JNodePopupBuilder popup = new JNodePopupBuilder(this, popupMenu, shortcutsController);
 		popup.addSeparator();
 		popup.add(new FindUsageAction(this));
+		popup.add(new UsageDialogPlusAction(this));
 		popup.add(new GoToDeclarationAction(this));
 		popup.add(new CommentAction(this));
 		popup.add(new CommentSearchAction(this));
@@ -119,9 +156,10 @@ public final class CodeArea extends AbstractCodeArea {
 		popup.addSeparator();
 		popup.add(new FridaAction(this));
 		popup.add(new XposedAction(this));
+		getMainWindow().getWrapper().getGuiPluginsContext().appendPopupMenus(this, popup);
 
 		// move caret on mouse right button click
-		popup.getMenu().addPopupMenuListener(new DefaultPopupMenuListener() {
+		popupMenu.addPopupMenuListener(new DefaultPopupMenuListener() {
 			@Override
 			public void popupMenuWillBecomeVisible(PopupMenuEvent e) {
 				CodeArea codeArea = CodeArea.this;
@@ -135,35 +173,39 @@ public final class CodeArea extends AbstractCodeArea {
 		});
 	}
 
-	public int adjustOffsetForToken(@Nullable Token token) {
+	private void addMenuForJsonFile() {
+		ShortcutsController shortcutsController = getMainWindow().getShortcutsController();
+		JNodePopupBuilder popup = new JNodePopupBuilder(this, getPopupMenu(), shortcutsController);
+		popup.addSeparator();
+		popup.add(new JsonPrettifyAction(this));
+	}
+
+	/**
+	 * Search start of word token at specified offset
+	 *
+	 * @return -1 if no word token found
+	 */
+	public int adjustOffsetForWordToken(int offset) {
+		Token token = getWordTokenAtOffset(offset);
 		if (token == null) {
 			return -1;
 		}
 		int type = token.getType();
-		final int sourceOffset;
-		if (node instanceof JClass) {
-			if (type == TokenTypes.IDENTIFIER) {
-				sourceOffset = token.getOffset();
-			} else if (type == TokenTypes.ANNOTATION && token.length() > 1) {
-				sourceOffset = token.getOffset() + 1;
-			} else {
-				return -1;
+		if (isCodeNode()) {
+			if (type == TokenTypes.IDENTIFIER || type == TokenTypes.FUNCTION) {
+				return token.getOffset();
 			}
-		} else {
-			if (type == TokenTypes.MARKUP_TAG_ATTRIBUTE_VALUE) {
-				sourceOffset = token.getOffset() + 1; // skip quote at start (")
-			} else {
-				return -1;
+			if (type == TokenTypes.ANNOTATION && token.length() > 1) {
+				return token.getOffset() + 1;
 			}
+			if (type == TokenTypes.RESERVED_WORD && token.length() == 6 && token.getLexeme().equals("static")) {
+				// maybe a class init method
+				return token.getOffset();
+			}
+		} else if (type == TokenTypes.MARKUP_TAG_ATTRIBUTE_VALUE) {
+			return token.getOffset() + 1; // skip quote at start (")
 		}
-		// fast skip
-		if (token.length() == 1) {
-			char ch = token.getTextArray()[token.getTextOffset()];
-			if (ch == '.' || ch == ',' || ch == ';') {
-				return -1;
-			}
-		}
-		return sourceOffset;
+		return -1;
 	}
 
 	/**
@@ -195,22 +237,38 @@ public final class CodeArea extends AbstractCodeArea {
 	@Nullable
 	public JNode getNodeUnderCaret() {
 		int caretPos = getCaretPosition();
-		Token token = modelToToken(caretPos);
-		if (token == null) {
-			return null;
-		}
-		int start = adjustOffsetForToken(token);
+		return getJNodeAtOffset(adjustOffsetForWordToken(caretPos));
+	}
+
+	@Nullable
+	public JNode getEnclosingNodeUnderCaret() {
+		int caretPos = getCaretPosition();
+		int start = adjustOffsetForWordToken(caretPos);
 		if (start == -1) {
 			start = caretPos;
 		}
-		return getJNodeAtOffset(start);
+		return getEnclosingJNodeAtOffset(start);
 	}
 
 	@Nullable
 	public JNode getNodeUnderMouse() {
 		Point pos = UiUtils.getMousePosition(this);
-		int offset = adjustOffsetForToken(viewToToken(pos));
-		return getJNodeAtOffset(offset);
+		return getJNodeAtOffset(adjustOffsetForWordToken(viewToModel2D(pos)));
+	}
+
+	@Nullable
+	public JNode getEnclosingNodeUnderMouse() {
+		Point pos = UiUtils.getMousePosition(this);
+		return getEnclosingJNodeAtOffset(adjustOffsetForWordToken(viewToModel2D(pos)));
+	}
+
+	@Nullable
+	public JNode getEnclosingJNodeAtOffset(int offset) {
+		JavaNode javaNode = getEnclosingJavaNode(offset);
+		if (javaNode != null) {
+			return convertJavaNode(javaNode);
+		}
+		return null;
 	}
 
 	@Nullable
@@ -238,6 +296,9 @@ public final class CodeArea extends AbstractCodeArea {
 	}
 
 	public JavaNode getClosestJavaNode(int offset) {
+		if (offset == -1) {
+			return null;
+		}
 		try {
 			return getJadxWrapper().getDecompiler().getClosestJavaNode(getCodeInfo(), offset);
 		} catch (Exception e) {
@@ -246,19 +307,42 @@ public final class CodeArea extends AbstractCodeArea {
 		}
 	}
 
-	public JavaClass getJavaClassIfAtPos(int pos) {
+	public JavaNode getEnclosingJavaNode(int offset) {
+		if (offset == -1) {
+			return null;
+		}
+		try {
+			return getJadxWrapper().getDecompiler().getEnclosingNode(getCodeInfo(), offset);
+		} catch (Exception e) {
+			LOG.error("Can't get java node by offset: {}", offset, e);
+			return null;
+		}
+	}
+
+	public @Nullable JavaClass getJavaClassIfAtPos(int pos) {
 		try {
 			ICodeInfo codeInfo = getCodeInfo();
-			if (codeInfo.hasMetadata()) {
-				ICodeAnnotation ann = codeInfo.getCodeMetadata().getAt(pos);
-				if (ann != null && ann.getAnnType() == ICodeAnnotation.AnnType.CLASS) {
+			if (!codeInfo.hasMetadata()) {
+				return null;
+			}
+			ICodeAnnotation ann = codeInfo.getCodeMetadata().getAt(pos);
+			if (ann == null) {
+				return null;
+			}
+			switch (ann.getAnnType()) {
+				case CLASS:
 					return (JavaClass) getJadxWrapper().getDecompiler().getJavaNodeByCodeAnnotation(codeInfo, ann);
-				}
+				case METHOD:
+					// use class from constructor call
+					JavaNode node = getJadxWrapper().getDecompiler().getJavaNodeByCodeAnnotation(codeInfo, ann);
+					return node != null ? node.getDeclaringClass() : null;
+				default:
+					return null;
 			}
 		} catch (Exception e) {
 			LOG.error("Can't get java node by offset: {}", pos, e);
+			return null;
 		}
-		return null;
 	}
 
 	public void refreshClass() {
@@ -280,7 +364,7 @@ public final class CodeArea extends AbstractCodeArea {
 	}
 
 	public MainWindow getMainWindow() {
-		return contentPanel.getTabbedPane().getMainWindow();
+		return contentPanel.getMainWindow();
 	}
 
 	public JadxWrapper getJadxWrapper() {
@@ -293,6 +377,8 @@ public final class CodeArea extends AbstractCodeArea {
 
 	@Override
 	public void dispose() {
+		shortcutsController.unbindActionsForComponent(this);
+
 		super.dispose();
 		cachedCodeInfo = null;
 	}

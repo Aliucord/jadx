@@ -18,6 +18,7 @@ import jadx.core.dex.nodes.RootNode;
 import jadx.core.utils.exceptions.JadxRuntimeException;
 
 import static jadx.core.dex.visitors.typeinference.TypeCompareEnum.CONFLICT;
+import static jadx.core.dex.visitors.typeinference.TypeCompareEnum.CONFLICT_BY_GENERIC;
 import static jadx.core.dex.visitors.typeinference.TypeCompareEnum.EQUAL;
 import static jadx.core.dex.visitors.typeinference.TypeCompareEnum.NARROW;
 import static jadx.core.dex.visitors.typeinference.TypeCompareEnum.NARROW_BY_GENERIC;
@@ -104,25 +105,11 @@ public class TypeCompare {
 			}
 		}
 		if (firstPrimitive && secondPrimitive) {
-			PrimitiveType firstPrimitiveType = first.getPrimitiveType();
-			PrimitiveType secondPrimitiveType = second.getPrimitiveType();
-			if (firstPrimitiveType == PrimitiveType.BOOLEAN
-					|| secondPrimitiveType == PrimitiveType.BOOLEAN) {
-				return CONFLICT;
-			}
-			if (swapEquals(firstPrimitiveType, secondPrimitiveType, PrimitiveType.CHAR, PrimitiveType.BYTE)
-					|| swapEquals(firstPrimitiveType, secondPrimitiveType, PrimitiveType.CHAR, PrimitiveType.SHORT)) {
-				return CONFLICT;
-			}
-			return firstPrimitiveType.compareTo(secondPrimitiveType) > 0 ? WIDER : NARROW;
+			return comparePrimitives(first.getPrimitiveType(), second.getPrimitiveType());
 		}
 
 		LOG.warn("Type compare function not complete, can't compare {} and {}", first, second);
 		return TypeCompareEnum.CONFLICT;
-	}
-
-	private boolean swapEquals(PrimitiveType first, PrimitiveType second, PrimitiveType a, PrimitiveType b) {
-		return (first == a && second == b) || (first == b && second == a);
 	}
 
 	private TypeCompareEnum compareArrayWithOtherType(ArgType array, ArgType other) {
@@ -265,6 +252,9 @@ public class TypeCompare {
 		if (objType.isGenericType()) {
 			return compareTypeVariables(genericType, objType);
 		}
+		if (objType.isWildcard()) {
+			return CONFLICT_BY_GENERIC;
+		}
 		boolean rootObject = objType.equals(ArgType.OBJECT);
 		List<ArgType> extendTypes = genericType.getExtendTypes();
 		if (extendTypes.isEmpty()) {
@@ -314,6 +304,60 @@ public class TypeCompare {
 			return result;
 		}
 		return extendTypes;
+	}
+
+	private TypeCompareEnum comparePrimitives(PrimitiveType type1, PrimitiveType type2) {
+		if (type1 == PrimitiveType.BOOLEAN || type2 == PrimitiveType.BOOLEAN) {
+			return type1 == type2 ? EQUAL : CONFLICT;
+		}
+
+		if (type1 == PrimitiveType.VOID || type2 == PrimitiveType.VOID) {
+			return type1 == type2 ? EQUAL : CONFLICT;
+		}
+
+		if (type1 == PrimitiveType.BYTE && type2 == PrimitiveType.CHAR) {
+			return WIDER;
+		}
+
+		if (type1 == PrimitiveType.SHORT && type2 == PrimitiveType.CHAR) {
+			return WIDER;
+		}
+
+		final int type1Width = getTypeWidth(type1);
+		final int type2Width = getTypeWidth(type2);
+		if (type1Width > type2Width) {
+			return WIDER;
+		} else if (type1Width < type2Width) {
+			return NARROW;
+		} else {
+			return EQUAL;
+		}
+	}
+
+	private byte getTypeWidth(PrimitiveType type) {
+		switch (type) {
+			case BYTE:
+				return 0;
+			case SHORT:
+				return 1;
+			case CHAR:
+				return 2;
+			case INT:
+				return 3;
+			case LONG:
+				return 4;
+			case FLOAT:
+				return 5;
+			case DOUBLE:
+				return 6;
+			case BOOLEAN:
+			case OBJECT:
+			case ARRAY:
+			case VOID:
+				throw new JadxRuntimeException("Type " + type + " should not be here");
+		}
+
+		throw new JadxRuntimeException("Unhandled type: " + type);
 	}
 
 	public Comparator<ArgType> getComparator() {

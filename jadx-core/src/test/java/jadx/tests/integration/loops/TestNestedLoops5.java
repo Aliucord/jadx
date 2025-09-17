@@ -2,14 +2,10 @@ package jadx.tests.integration.loops;
 
 import org.junit.jupiter.api.Test;
 
-import jadx.NotYetImplemented;
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.Matchers.not;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static jadx.tests.api.utils.assertj.JadxAssertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class TestNestedLoops5 extends IntegrationTest {
 
@@ -31,16 +27,14 @@ public class TestNestedLoops5 extends IntegrationTest {
 		}
 
 		public void check() {
-			assertEquals(7, testFor());
+			assertThat(testFor()).isEqualTo(7);
 		}
 	}
 
 	@Test
-	@NotYetImplemented
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, not(containsString("continue;")));
+		assertThat(getClassNode(TestCls.class))
+				.code()
+				.doesNotContain("continue;");
 	}
 }

@@ -26,7 +26,6 @@ import org.fife.ui.rsyntaxtextarea.RSyntaxUtilities;
 import org.fife.ui.rsyntaxtextarea.Style;
 import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
 import org.fife.ui.rsyntaxtextarea.SyntaxScheme;
-import org.fife.ui.rsyntaxtextarea.Theme;
 import org.fife.ui.rtextarea.Gutter;
 import org.fife.ui.rtextarea.GutterIconInfo;
 import org.fife.ui.rtextarea.IconRowHeader;
@@ -65,16 +64,17 @@ public final class SmaliArea extends AbstractCodeArea {
 		super(contentPanel, node);
 		this.textNode = new TextNode(node.getName());
 
-		cbUseSmaliV2 = new JCheckBoxMenuItem(NLS.str("popup.bytecode_col"),
-				shouldUseSmaliPrinterV2());
+		setCodeFoldingEnabled(true);
+
+		cbUseSmaliV2 = new JCheckBoxMenuItem(NLS.str("popup.bytecode_col"), shouldUseSmaliPrinterV2());
 		cbUseSmaliV2.setAction(new AbstractAction(NLS.str("popup.bytecode_col")) {
 			private static final long serialVersionUID = -1111111202103170737L;
 
 			@Override
 			public void actionPerformed(ActionEvent e) {
-				JadxSettings settings = getContentPanel().getTabbedPane().getMainWindow().getSettings();
+				JadxSettings settings = getContentPanel().getMainWindow().getSettings();
 				settings.setSmaliAreaShowBytecode(!settings.getSmaliAreaShowBytecode());
-				contentPanel.getTabbedPane().getOpenTabs().values().forEach(v -> {
+				contentPanel.getTabbedPane().getTabs().forEach(v -> {
 					if (v instanceof ClassCodeContentPanel) {
 						switchModel();
 						((ClassCodeContentPanel) v).getSmaliCodeArea().refresh();
@@ -93,6 +93,7 @@ public final class SmaliArea extends AbstractCodeArea {
 			curVersion = shouldUseSmaliPrinterV2();
 			model.load();
 			setCaretPosition(0);
+			setLoaded();
 		}
 	}
 
@@ -113,19 +114,19 @@ public final class SmaliArea extends AbstractCodeArea {
 	}
 
 	public JClass getJClass() {
-		return ((JClass) node);
+		return (JClass) node;
 	}
 
 	private void switchModel() {
 		if (model != null) {
 			model.unload();
 		}
-		model = shouldUseSmaliPrinterV2() ? new DebugModel() : new NormalModel();
+		model = shouldUseSmaliPrinterV2() ? new DebugModel() : new NormalModel(this);
 	}
 
 	public void scrollToDebugPos(int pos) {
-		getContentPanel().getTabbedPane().getMainWindow()
-				.getSettings().setSmaliAreaShowBytecode(true); // don't sync when it's set programmatically.
+		// don't sync when it's set programmatically.
+		getContentPanel().getMainWindow().getSettings().setSmaliAreaShowBytecode(true);
 		cbUseSmaliV2.setState(shouldUseSmaliPrinterV2());
 		if (!(model instanceof DebugModel)) {
 			switchModel();
@@ -148,7 +149,7 @@ public final class SmaliArea extends AbstractCodeArea {
 	}
 
 	private boolean shouldUseSmaliPrinterV2() {
-		return getContentPanel().getTabbedPane().getMainWindow().getSettings().getSmaliAreaShowBytecode();
+		return getContentPanel().getMainWindow().getSettings().getSmaliAreaShowBytecode();
 	}
 
 	private abstract class SmaliModel {
@@ -173,9 +174,8 @@ public final class SmaliArea extends AbstractCodeArea {
 
 	private class NormalModel extends SmaliModel {
 
-		public NormalModel() {
-			Theme theme = getContentPanel().getTabbedPane().getMainWindow().getEditorTheme();
-			setSyntaxScheme(theme.scheme);
+		public NormalModel(SmaliArea smaliArea) {
+			getContentPanel().getMainWindow().getEditorThemeManager().apply(smaliArea);
 			setSyntaxEditingStyle(SYNTAX_STYLE_SMALI);
 		}
 
@@ -192,12 +192,11 @@ public final class SmaliArea extends AbstractCodeArea {
 
 	private class DebugModel extends SmaliModel {
 		private KeyStroke bpShortcut;
-		private final String keyID = "set a break point";
 		private Gutter gutter;
 		private Object runningHighlightTag = null; // running line
 		private final SmaliV2Style smaliV2Style = new SmaliV2Style(SmaliArea.this);
 		private final Map<Integer, BreakpointLine> bpMap = new HashMap<>();
-		private final PropertyChangeListener listener = evt -> {
+		private final PropertyChangeListener schemeListener = evt -> {
 			if (smaliV2Style.refreshTheme()) {
 				setSyntaxScheme(smaliV2Style);
 			}
@@ -206,7 +205,7 @@ public final class SmaliArea extends AbstractCodeArea {
 		public DebugModel() {
 			loadV2Style();
 			setSyntaxEditingStyle(SyntaxConstants.SYNTAX_STYLE_ASSEMBLER_6502);
-			addPropertyChangeListener(SYNTAX_SCHEME_PROPERTY, listener);
+			addPropertyChangeListener(SYNTAX_SCHEME_PROPERTY, schemeListener);
 			regBreakpointEvents();
 		}
 
@@ -226,13 +225,11 @@ public final class SmaliArea extends AbstractCodeArea {
 
 		@Override
 		public void unload() {
-			removePropertyChangeListener(listener);
+			removePropertyChangeListener(schemeListener);
 			removeLineHighlight(runningHighlightTag);
-			UiUtils.removeKeyBinding(SmaliArea.this, bpShortcut, keyID);
+			UiUtils.removeKeyBinding(SmaliArea.this, bpShortcut, "set a break point");
 			BreakpointManager.removeListener((JClass) node);
-			bpMap.forEach((k, v) -> {
-				v.remove();
-			});
+			bpMap.forEach((k, v) -> v.remove());
 		}
 
 		@Override
@@ -315,31 +312,26 @@ public final class SmaliArea extends AbstractCodeArea {
 		}
 
 		private class SmaliV2Style extends SyntaxScheme {
-
-			Theme curTheme;
-
 			public SmaliV2Style(SmaliArea smaliArea) {
 				super(true);
-				curTheme = smaliArea.getContentPanel().getTabbedPane().getMainWindow().getEditorTheme();
+				smaliArea.getContentPanel().getMainWindow().getEditorThemeManager().apply(smaliArea);
 				updateTheme();
 			}
 
 			public Font getFont() {
-				return getContentPanel().getTabbedPane().getMainWindow().getSettings().getSmaliFont();
+				return getContentPanel().getMainWindow().getSettings().getSmaliFont();
 			}
 
 			public boolean refreshTheme() {
-				Theme theme = getContentPanel().getTabbedPane().getMainWindow().getEditorTheme();
-				boolean refresh = theme != curTheme;
+				boolean refresh = getSyntaxScheme() != this;
 				if (refresh) {
-					curTheme = theme;
 					updateTheme();
 				}
 				return refresh;
 			}
 
 			private void updateTheme() {
-				Style[] mainStyles = curTheme.scheme.getStyles();
+				Style[] mainStyles = getSyntaxScheme().getStyles();
 				Style[] styles = new Style[mainStyles.length];
 				for (int i = 0; i < mainStyles.length; i++) {
 					Style mainStyle = mainStyles[i];
@@ -361,7 +353,7 @@ public final class SmaliArea extends AbstractCodeArea {
 
 			@Override
 			public void restoreDefaults(Font baseFont, boolean fontStyles) {
-				// Note: it's a hook for continue using the editor theme, better don't remove it.
+				// Note: it's a hook for continuing using the editor theme, better don't remove it.
 			}
 		}
 
@@ -427,7 +419,7 @@ public final class SmaliArea extends AbstractCodeArea {
 
 							@Override
 							public void mousePressed(MouseEvent e) {
-								int offs = textArea.viewToModel(e.getPoint());
+								int offs = textArea.viewToModel2D(e.getPoint());
 								if (offs > -1) {
 									model.setBreakpoint(offs);
 								}

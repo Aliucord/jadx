@@ -6,6 +6,11 @@ public class TabViewState {
 	private String subPath;
 	private int caret;
 	private ViewPoint view;
+	boolean active;
+	boolean pinned;
+	boolean bookmarked;
+	boolean hidden;
+	boolean previewTab;
 
 	public String getType() {
 		return type;
@@ -45,5 +50,45 @@ public class TabViewState {
 
 	public void setView(ViewPoint view) {
 		this.view = view;
+	}
+
+	public boolean isActive() {
+		return active;
+	}
+
+	public void setActive(boolean active) {
+		this.active = active;
+	}
+
+	public boolean isPinned() {
+		return pinned;
+	}
+
+	public void setPinned(boolean pinned) {
+		this.pinned = pinned;
+	}
+
+	public boolean isBookmarked() {
+		return bookmarked;
+	}
+
+	public void setBookmarked(boolean bookmarked) {
+		this.bookmarked = bookmarked;
+	}
+
+	public boolean isHidden() {
+		return hidden;
+	}
+
+	public void setHidden(boolean hidden) {
+		this.hidden = hidden;
+	}
+
+	public boolean isPreviewTab() {
+		return previewTab;
+	}
+
+	public void setPreviewTab(boolean previewTab) {
+		this.previewTab = previewTab;
 	}
 }

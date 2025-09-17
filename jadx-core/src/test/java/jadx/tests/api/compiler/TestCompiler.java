@@ -20,11 +20,12 @@ import javax.tools.ToolProvider;
 
 import org.jetbrains.annotations.NotNull;
 
+import jadx.api.impl.SimpleCodeWriter;
 import jadx.core.dex.nodes.ClassNode;
 import jadx.core.utils.files.FileUtils;
 import jadx.tests.api.IntegrationTest;
 
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class TestCompiler implements Closeable {
 	private final CompilerOptions options;
@@ -80,12 +81,16 @@ public class TestCompiler implements Closeable {
 		arguments.add(javaVerStr);
 		arguments.addAll(options.getArguments());
 
-		DiagnosticListener<? super JavaFileObject> diagnostic =
-				diagObj -> System.out.println("Compiler diagnostic: " + diagObj);
+		SimpleCodeWriter output = new SimpleCodeWriter();
+		DiagnosticListener<JavaFileObject> diagnostic = diagObj -> {
+			String msg = "Compiler diagnostic: " + diagObj;
+			output.startLine(msg);
+			System.out.println(msg);
+		};
 		Writer out = new PrintWriter(System.out);
 		CompilationTask compilerTask = compiler.getTask(out, fileManager, diagnostic, arguments, null, jfObjects);
 		if (Boolean.FALSE.equals(compilerTask.call())) {
-			throw new RuntimeException("Compilation failed");
+			throw new RuntimeException("Compilation failed: " + output);
 		}
 	}
 
@@ -110,7 +115,7 @@ public class TestCompiler implements Closeable {
 			Class<?> cls = getClass(clsFullName);
 			Method mth = getMethod(cls, methodName, types);
 			Object inst = cls.getConstructor().newInstance();
-			assertNotNull(mth, "Failed to get method " + methodName + '(' + Arrays.toString(types) + ')');
+			assertThat(mth).as("Failed to get method " + methodName + '(' + Arrays.toString(types) + ')').isNotNull();
 			return mth.invoke(inst, args);
 		} catch (Throwable e) {
 			IntegrationTest.rethrow("Invoke error for method: " + methodName, e);

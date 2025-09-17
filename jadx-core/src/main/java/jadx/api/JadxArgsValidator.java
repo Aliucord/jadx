@@ -25,14 +25,8 @@ public class JadxArgsValidator {
 
 	private static void checkInputFiles(JadxDecompiler jadx, JadxArgs args) {
 		List<File> inputFiles = args.getInputFiles();
-		if (inputFiles.isEmpty() && jadx.getCustomLoads().isEmpty()) {
+		if (inputFiles.isEmpty() && jadx.getCustomCodeLoaders().isEmpty()) {
 			throw new JadxArgsValidateException("Please specify input file");
-		}
-		for (File inputFile : inputFiles) {
-			String fileName = inputFile.getName();
-			if (fileName.startsWith("--")) {
-				throw new JadxArgsValidateException("Unknown argument: " + fileName);
-			}
 		}
 		for (File file : inputFiles) {
 			checkFile(file);

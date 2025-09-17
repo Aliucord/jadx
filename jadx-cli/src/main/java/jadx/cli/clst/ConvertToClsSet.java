@@ -2,7 +2,6 @@ package jadx.cli.clst;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -12,13 +11,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import jadx.api.JadxArgs;
-import jadx.api.plugins.JadxPluginManager;
-import jadx.api.plugins.input.JadxInputPlugin;
-import jadx.api.plugins.input.data.ILoadResult;
+import jadx.api.JadxDecompiler;
+import jadx.api.args.UseSourceNameAsClassNameAlias;
 import jadx.core.clsp.ClsSet;
-import jadx.core.dex.nodes.ClassNode;
 import jadx.core.dex.nodes.RootNode;
-import jadx.core.dex.visitors.SignatureProcessor;
+import jadx.core.utils.files.FileUtils;
 
 /**
  * Utility class for convert dex or jar to jadx classes set (.jcst)
@@ -27,41 +24,50 @@ public class ConvertToClsSet {
 	private static final Logger LOG = LoggerFactory.getLogger(ConvertToClsSet.class);
 
 	public static void usage() {
-		LOG.info("<output .jcst or .jar file> <several input dex or jar files> ");
+		LOG.info("<android API level (number)> <output .jcst file> <several input dex or jar files> ");
+		LOG.info("Arguments to update core.jcst: "
+				+ "<android API level (number)> "
+				+ "<jadx root>/jadx-core/src/main/resources/clst/core.jcst "
+				+ "<sdk_root>/platforms/android-<api level>/android.jar"
+				+ "<sdk_root>/platforms/android-<api level>/optional/android.car.jar "
+				+ "<sdk_root>/platforms/android-<api level>/optional/org.apache.http.legacy.jar");
 	}
 
-	public static void main(String[] args) throws Exception {
-		if (args.length < 2) {
+	public static void main(String[] args) {
+		if (args.length != 5) {
 			usage();
 			System.exit(1);
 		}
-		List<Path> inputPaths = Stream.of(args).map(Paths::get).collect(Collectors.toList());
+		int androidApiLevel = Integer.parseInt(args[0]);
+		List<Path> inputPaths = Stream.of(args).skip(1).map(Paths::get).collect(Collectors.toList());
 		Path output = inputPaths.remove(0);
 
-		JadxPluginManager pluginManager = new JadxPluginManager();
-		pluginManager.load();
-		List<ILoadResult> loadedInputs = new ArrayList<>();
-		for (JadxInputPlugin inputPlugin : pluginManager.getInputPlugins()) {
-			loadedInputs.add(inputPlugin.loadFiles(inputPaths));
-		}
-
 		JadxArgs jadxArgs = new JadxArgs();
+		jadxArgs.setInputFiles(FileUtils.toFiles(inputPaths));
+
+		// disable not needed passes executed at prepare stage
+		jadxArgs.setDeobfuscationOn(false);
 		jadxArgs.setRenameFlags(EnumSet.noneOf(JadxArgs.RenameEnum.class));
-		RootNode root = new RootNode(jadxArgs);
-		root.loadClasses(loadedInputs);
+		jadxArgs.setUseSourceNameAsClassNameAlias(UseSourceNameAsClassNameAlias.NEVER);
+		jadxArgs.setMoveInnerClasses(false);
+		jadxArgs.setInlineAnonymousClasses(false);
+		jadxArgs.setInlineMethods(false);
 
-		// from pre-decompilation stage run only SignatureProcessor
-		SignatureProcessor signatureProcessor = new SignatureProcessor();
-		signatureProcessor.init(root);
-		for (ClassNode classNode : root.getClasses()) {
-			signatureProcessor.visit(classNode);
+		// don't require/load class set file
+		jadxArgs.setLoadJadxClsSetFile(false);
+
+		try (JadxDecompiler decompiler = new JadxDecompiler(jadxArgs)) {
+			decompiler.load();
+			RootNode root = decompiler.getRoot();
+			ClsSet set = new ClsSet(root);
+			set.setAndroidApiLevel(androidApiLevel);
+			set.loadFrom(root);
+			set.save(output);
+
+			LOG.info("Output: {}", output);
+			LOG.info("done");
+		} catch (Exception e) {
+			LOG.error("Failed with error", e);
 		}
-
-		ClsSet set = new ClsSet(root);
-		set.loadFrom(root);
-		set.save(output);
-
-		LOG.info("Output: {}", output);
-		LOG.info("done");
 	}
 }

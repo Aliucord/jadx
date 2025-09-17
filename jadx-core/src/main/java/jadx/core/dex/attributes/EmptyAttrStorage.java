@@ -9,6 +9,12 @@ import jadx.api.plugins.input.data.attributes.IJadxAttribute;
 
 public final class EmptyAttrStorage extends AttributeStorage {
 
+	public static final AttributeStorage INSTANCE = new EmptyAttrStorage();
+
+	private EmptyAttrStorage() {
+		// singleton
+	}
+
 	@Override
 	public boolean contains(AFlag flag) {
 		return false;
@@ -32,11 +38,6 @@ public final class EmptyAttrStorage extends AttributeStorage {
 	@Override
 	public <T> List<T> getAll(IJadxAttrType<AttrList<T>> type) {
 		return Collections.emptyList();
-	}
-
-	@Override
-	public void clear() {
-		// ignore
 	}
 
 	@Override

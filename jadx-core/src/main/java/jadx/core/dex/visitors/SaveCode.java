@@ -14,7 +14,6 @@ import org.slf4j.LoggerFactory;
 
 import jadx.api.ICodeInfo;
 import jadx.api.JadxArgs;
-import jadx.api.plugins.utils.ZipSecurity;
 import jadx.core.dex.attributes.AFlag;
 import jadx.core.dex.nodes.ClassNode;
 import jadx.core.dex.nodes.RootNode;
@@ -41,21 +40,18 @@ public class SaveCode {
 		if (codeStr.isEmpty()) {
 			return;
 		}
-		if (cls.root().getArgs().isSkipFilesSave()) {
+		JadxArgs args = cls.root().getArgs();
+		if (args.isSkipFilesSave()) {
 			return;
 		}
 		String fileName = cls.getClassInfo().getAliasFullPath() + getFileExtension(cls.root());
-		save(codeStr, dir, fileName, saveToJar);
-	}
-
-	public static void save(String code, File dir, String fileName, SaveToJar saveToJar) {
-		if (!ZipSecurity.isValidZipEntryName(fileName)) {
+		if (!args.getSecurity().isValidEntryName(fileName)) {
 			return;
 		}
 		if (saveToJar != null) {
-			saveToJar.write(code, fileName);
+			saveToJar.write(codeStr, fileName);
 		} else {
-			save(code, new File(dir, fileName));
+			save(codeStr, new File(dir, fileName));
 		}
 	}
 
@@ -65,7 +61,7 @@ public class SaveCode {
 
 	public static void save(String code, File file) {
 		File outFile = FileUtils.prepareFile(file);
-		try (PrintWriter out = new PrintWriter(outFile, "UTF-8")) {
+		try (PrintWriter out = new PrintWriter(outFile, StandardCharsets.UTF_8)) {
 			out.println(code);
 		} catch (Exception e) {
 			LOG.error("Save file error", e);
@@ -97,7 +93,7 @@ public class SaveCode {
 			}
 		}
 
-		public void write(String code, String path) {
+		public synchronized void write(String code, String path) {
 			try {
 				jarOutputStream.putNextEntry(new JarEntry(path.replace("\\", "/")));
 				jarOutputStream.write(code.getBytes(StandardCharsets.UTF_8));

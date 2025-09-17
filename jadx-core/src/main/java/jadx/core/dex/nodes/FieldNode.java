@@ -12,7 +12,7 @@ import jadx.core.dex.info.FieldInfo;
 import jadx.core.dex.instructions.args.ArgType;
 import jadx.core.utils.ListUtils;
 
-public class FieldNode extends NotificationAttrNode implements ICodeNode {
+public class FieldNode extends NotificationAttrNode implements ICodeNode, IFieldInfoRef {
 
 	private final ClassNode parentClass;
 	private final FieldInfo fieldInfo;
@@ -38,10 +38,15 @@ public class FieldNode extends NotificationAttrNode implements ICodeNode {
 		this.accFlags = new AccessInfo(accessFlags, AFType.FIELD);
 	}
 
+	public void unload() {
+		unloadAttributes();
+	}
+
 	public void updateType(ArgType type) {
 		this.type = type;
 	}
 
+	@Override
 	public FieldInfo getFieldInfo() {
 		return fieldInfo;
 	}
@@ -72,12 +77,18 @@ public class FieldNode extends NotificationAttrNode implements ICodeNode {
 		return fieldInfo.getAlias();
 	}
 
+	@Override
 	public void rename(String alias) {
 		fieldInfo.setAlias(alias);
 	}
 
 	public ArgType getType() {
 		return type;
+	}
+
+	@Override
+	public ClassNode getDeclaringClass() {
+		return parentClass;
 	}
 
 	public ClassNode getParentClass() {

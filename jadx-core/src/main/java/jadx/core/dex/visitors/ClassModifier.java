@@ -1,18 +1,17 @@
 package jadx.core.dex.visitors;
 
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 
 import jadx.api.plugins.input.data.AccessFlags;
+import jadx.api.plugins.input.data.attributes.JadxAttrType;
 import jadx.core.Consts;
 import jadx.core.dex.attributes.AFlag;
 import jadx.core.dex.attributes.AType;
 import jadx.core.dex.attributes.nodes.FieldReplaceAttr;
 import jadx.core.dex.attributes.nodes.MethodReplaceAttr;
+import jadx.core.dex.attributes.nodes.RenameReasonAttr;
 import jadx.core.dex.attributes.nodes.SkipMethodArgsAttr;
 import jadx.core.dex.info.AccessInfo;
 import jadx.core.dex.info.ClassInfo;
@@ -33,6 +32,7 @@ import jadx.core.dex.nodes.ClassNode;
 import jadx.core.dex.nodes.FieldNode;
 import jadx.core.dex.nodes.InsnNode;
 import jadx.core.dex.nodes.MethodNode;
+import jadx.core.dex.visitors.fixaccessmodifiers.FixAccessModifiers;
 import jadx.core.dex.visitors.usage.UsageInfoVisitor;
 import jadx.core.utils.BlockUtils;
 import jadx.core.utils.InsnRemover;
@@ -51,6 +51,9 @@ public class ClassModifier extends AbstractVisitor {
 
 	@Override
 	public boolean visit(ClassNode cls) throws JadxException {
+		if (cls.contains(AFlag.PACKAGE_INFO)) {
+			return false;
+		}
 		for (ClassNode inner : cls.getInnerClasses()) {
 			visit(inner);
 		}
@@ -61,7 +64,6 @@ public class ClassModifier extends AbstractVisitor {
 		removeSyntheticFields(cls);
 		cls.getMethods().forEach(ClassModifier::removeSyntheticMethods);
 		cls.getMethods().forEach(ClassModifier::removeEmptyMethods);
-		cls.getMethods().forEach(ClassModifier::processAnonymousConstructor);
 		return false;
 	}
 
@@ -79,12 +81,16 @@ public class ClassModifier extends AbstractVisitor {
 		boolean inline = cls.isAnonymous();
 		if (inline || cls.getClassInfo().isInner()) {
 			for (FieldNode field : cls.getFields()) {
-				if (field.getAccessFlags().isSynthetic() && field.getType().isObject()) {
-					ClassInfo clsInfo = ClassInfo.fromType(cls.root(), field.getType());
+				ArgType fldType = field.getType();
+				if (field.getAccessFlags().isSynthetic() && fldType.isObject() && !fldType.isGenericType()) {
+					ClassInfo clsInfo = ClassInfo.fromType(cls.root(), fldType);
 					ClassNode fieldsCls = cls.root().resolveClass(clsInfo);
 					ClassInfo parentClass = cls.getClassInfo().getParentClass();
-					if (fieldsCls != null
-							&& (inline || Objects.equals(parentClass, fieldsCls.getClassInfo()))) {
+					if (fieldsCls == null) {
+						continue;
+					}
+					boolean isParentInst = Objects.equals(parentClass, fieldsCls.getClassInfo());
+					if (inline || isParentInst) {
 						int found = 0;
 						for (MethodNode mth : cls.getMethods()) {
 							if (removeFieldUsageFromConstructor(mth, field, fieldsCls)) {
@@ -92,7 +98,9 @@ public class ClassModifier extends AbstractVisitor {
 							}
 						}
 						if (found != 0) {
-							field.addAttr(new FieldReplaceAttr(fieldsCls.getClassInfo()));
+							if (isParentInst) {
+								field.addAttr(new FieldReplaceAttr(fieldsCls.getClassInfo()));
+							}
 							field.add(AFlag.DONT_GENERATE);
 						}
 					}
@@ -158,7 +166,8 @@ public class ClassModifier extends AbstractVisitor {
 			return;
 		}
 		// remove synthetic constructor for inner classes
-		if (mth.isConstructor() && mth.contains(AFlag.METHOD_CANDIDATE_FOR_INLINE)) {
+		if (mth.isConstructor()
+				&& (mth.contains(AFlag.METHOD_CANDIDATE_FOR_INLINE) || mth.contains(AFlag.ANONYMOUS_CONSTRUCTOR))) {
 			InsnNode insn = BlockUtils.getOnlyOneInsnFromMth(mth);
 			if (insn != null) {
 				List<RegisterArg> args = mth.getArgRegs();
@@ -170,26 +179,32 @@ public class ClassModifier extends AbstractVisitor {
 	}
 
 	private static boolean isRemovedClassInArgs(ClassNode cls, List<RegisterArg> mthArgs) {
+		boolean removedFound = false;
 		for (RegisterArg arg : mthArgs) {
 			ArgType argType = arg.getType();
 			if (!argType.isObject()) {
 				continue;
 			}
+			boolean remove = false;
 			ClassNode argCls = cls.root().resolveClass(argType);
 			if (argCls == null) {
 				// check if missing class from current top class
 				ClassInfo argClsInfo = ClassInfo.fromType(cls.root(), argType);
-				if (argClsInfo.isInner()
+				if (argClsInfo.getParentClass() != null
 						&& cls.getFullName().startsWith(argClsInfo.getParentClass().getFullName())) {
-					return true;
+					remove = true;
 				}
 			} else {
 				if (argCls.contains(AFlag.DONT_GENERATE) || isEmptySyntheticClass(argCls)) {
-					return true;
+					remove = true;
 				}
 			}
+			if (remove) {
+				arg.add(AFlag.REMOVE);
+				removedFound = true;
+			}
 		}
-		return false;
+		return removedFound;
 	}
 
 	/**
@@ -274,17 +289,18 @@ public class ClassModifier extends AbstractVisitor {
 			}
 		}
 		// remove confirmed, change visibility and name if needed
-		if (!wrappedAccFlags.isPublic()) {
+		if (!wrappedAccFlags.isPublic() && !mth.root().getArgs().isRespectBytecodeAccModifiers()) {
 			// must be public
 			FixAccessModifiers.changeVisibility(wrappedMth, AccessFlags.PUBLIC);
 		}
 		String alias = mth.getAlias();
 		if (!Objects.equals(wrappedMth.getAlias(), alias)) {
-			wrappedMth.getMethodInfo().setAlias(alias);
+			wrappedMth.rename(alias);
+			RenameReasonAttr.forNode(wrappedMth).append("merged with bridge method [inline-methods]");
 		}
 		wrappedMth.addAttr(new MethodReplaceAttr(mth));
 		wrappedMth.copyAttributeFrom(mth, AType.METHOD_OVERRIDE);
-		wrappedMth.addDebugComment("Method merged with bridge method");
+		wrappedMth.addDebugComment("Method merged with bridge method: " + mth.getMethodInfo().getShortId());
 		return true;
 	}
 
@@ -305,107 +321,27 @@ public class ClassModifier extends AbstractVisitor {
 	 * Remove public empty constructors (static or default)
 	 */
 	private static void removeEmptyMethods(MethodNode mth) {
+		if (!mth.getArgRegs().isEmpty()) {
+			return;
+		}
 		AccessInfo af = mth.getAccessFlags();
-		boolean publicConstructor = af.isConstructor() && af.isPublic();
+		boolean publicConstructor = mth.isConstructor() && af.isPublic();
 		boolean clsInit = mth.getMethodInfo().isClassInit() && af.isStatic();
-		if ((publicConstructor || clsInit) && mth.getArgRegs().isEmpty()) {
-			List<BlockNode> bb = mth.getBasicBlocks();
-			if (bb == null || bb.isEmpty() || BlockUtils.isAllBlocksEmpty(bb)) {
-				if (clsInit) {
+		if (publicConstructor || clsInit) {
+			if (!BlockUtils.isAllBlocksEmpty(mth.getBasicBlocks())) {
+				return;
+			}
+			if (clsInit) {
+				mth.add(AFlag.DONT_GENERATE);
+			} else {
+				// don't remove default constructor if other constructors exists or constructor has annotations
+				if (mth.isDefaultConstructor()
+						&& !isNonDefaultConstructorExists(mth)
+						&& !mth.contains(JadxAttrType.ANNOTATION_LIST)) {
 					mth.add(AFlag.DONT_GENERATE);
-				} else {
-					// don't remove default constructor if other constructors exists
-					if (mth.isDefaultConstructor() && !isNonDefaultConstructorExists(mth)) {
-						mth.add(AFlag.DONT_GENERATE);
-					}
 				}
 			}
 		}
-	}
-
-	/**
-	 * Remove super call and put into removed fields from anonymous constructor
-	 */
-	private static void processAnonymousConstructor(MethodNode mth) {
-		if (!mth.contains(AFlag.ANONYMOUS_CONSTRUCTOR)) {
-			return;
-		}
-		List<InsnNode> usedInsns = new ArrayList<>();
-		Map<InsnArg, FieldNode> argsMap = getArgsToFieldsMapping(mth, usedInsns);
-		for (Map.Entry<InsnArg, FieldNode> entry : argsMap.entrySet()) {
-			FieldNode field = entry.getValue();
-			if (field == null) {
-				continue;
-			}
-			InsnArg arg = entry.getKey();
-			field.addAttr(new FieldReplaceAttr(arg));
-			field.add(AFlag.DONT_GENERATE);
-			if (arg.isRegister()) {
-				arg.add(AFlag.SKIP_ARG);
-				SkipMethodArgsAttr.skipArg(mth, ((RegisterArg) arg));
-			}
-		}
-		for (InsnNode usedInsn : usedInsns) {
-			usedInsn.add(AFlag.DONT_GENERATE);
-		}
-	}
-
-	private static Map<InsnArg, FieldNode> getArgsToFieldsMapping(MethodNode mth, List<InsnNode> usedInsns) {
-		MethodInfo callMth = mth.getMethodInfo();
-		ClassNode cls = mth.getParentClass();
-		List<RegisterArg> argList = mth.getArgRegs();
-		ClassNode outerCls = mth.getUseIn().get(0).getParentClass();
-		int startArg = 0;
-		if (callMth.getArgsCount() != 0 && callMth.getArgumentsTypes().get(0).equals(outerCls.getClassInfo().getType())) {
-			startArg = 1;
-		}
-		Map<InsnArg, FieldNode> map = new LinkedHashMap<>();
-		int argsCount = argList.size();
-		for (int i = startArg; i < argsCount; i++) {
-			RegisterArg arg = argList.get(i);
-			InsnNode useInsn = getParentInsnSkipMove(arg);
-			if (useInsn == null) {
-				return Collections.emptyMap();
-			}
-			switch (useInsn.getType()) {
-				case IPUT:
-					FieldNode fieldNode = cls.searchField((FieldInfo) ((IndexInsnNode) useInsn).getIndex());
-					if (fieldNode == null || !fieldNode.getAccessFlags().isSynthetic()) {
-						return Collections.emptyMap();
-					}
-					map.put(arg, fieldNode);
-					usedInsns.add(useInsn);
-					break;
-
-				case CONSTRUCTOR:
-					ConstructorInsn superConstr = (ConstructorInsn) useInsn;
-					if (!superConstr.isSuper()) {
-						return Collections.emptyMap();
-					}
-					usedInsns.add(useInsn);
-					break;
-
-				default:
-					return Collections.emptyMap();
-			}
-		}
-		return map;
-	}
-
-	private static InsnNode getParentInsnSkipMove(RegisterArg arg) {
-		SSAVar sVar = arg.getSVar();
-		if (sVar.getUseCount() != 1) {
-			return null;
-		}
-		RegisterArg useArg = sVar.getUseList().get(0);
-		InsnNode parentInsn = useArg.getParentInsn();
-		if (parentInsn == null) {
-			return null;
-		}
-		if (parentInsn.getType() == InsnType.MOVE) {
-			return getParentInsnSkipMove(parentInsn.getResult());
-		}
-		return parentInsn;
 	}
 
 	private static boolean isNonDefaultConstructorExists(MethodNode defCtor) {

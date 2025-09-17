@@ -5,8 +5,8 @@ import java.util.List;
 import org.jetbrains.annotations.Nullable;
 
 import jadx.api.JavaClass;
-import jadx.api.JavaMethod;
 import jadx.core.dex.info.MethodInfo;
+import jadx.core.dex.nodes.MethodNode;
 import jadx.gui.jobs.Cancelable;
 import jadx.gui.search.SearchSettings;
 import jadx.gui.treemodel.JNode;
@@ -23,15 +23,18 @@ public final class MethodSearchProvider extends BaseSearchProvider {
 
 	@Override
 	public @Nullable JNode next(Cancelable cancelable) {
+		if (classes.isEmpty()) {
+			return null;
+		}
 		while (true) {
 			if (cancelable.isCanceled()) {
 				return null;
 			}
 			JavaClass cls = classes.get(clsNum);
-			List<JavaMethod> methods = cls.getMethods();
+			List<MethodNode> methods = cls.getClassNode().getMethods();
 			if (mthNum < methods.size()) {
-				JavaMethod mth = methods.get(mthNum++);
-				if (checkMth(mth)) {
+				MethodNode mth = methods.get(mthNum++);
+				if (checkMth(mth.getMethodInfo())) {
 					return convert(mth);
 				}
 			} else {
@@ -44,10 +47,11 @@ public final class MethodSearchProvider extends BaseSearchProvider {
 		}
 	}
 
-	private boolean checkMth(JavaMethod mth) {
-		MethodInfo mthInfo = mth.getMethodNode().getMethodInfo();
+	private boolean checkMth(MethodInfo mthInfo) {
 		return isMatch(mthInfo.getShortId())
-				|| isMatch(mthInfo.getAlias());
+				|| isMatch(mthInfo.getAlias())
+				|| isMatch(mthInfo.getFullId())
+				|| isMatch(mthInfo.getAliasFullName());
 	}
 
 	@Override

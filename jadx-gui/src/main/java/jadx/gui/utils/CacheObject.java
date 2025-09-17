@@ -1,34 +1,39 @@
 package jadx.gui.utils;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import org.jetbrains.annotations.Nullable;
 
-import jadx.api.JavaClass;
+import jadx.gui.JadxWrapper;
 import jadx.gui.ui.dialog.SearchDialog;
+import jadx.gui.utils.pkgs.PackageHelper;
 
 public class CacheObject {
+	private final JadxWrapper wrapper;
+	private final JNodeCache jNodeCache;
+	private final PackageHelper packageHelper;
 
 	private String lastSearch;
-	private JNodeCache jNodeCache;
 	private Map<SearchDialog.SearchPreset, Set<SearchDialog.SearchOptions>> lastSearchOptions;
-
-	private List<List<JavaClass>> decompileBatches;
+	private String lastSearchPackage;
+	private int maxPkgLength;
 
 	private volatile boolean fullDecompilationFinished;
 
-	public CacheObject() {
+	public CacheObject(JadxWrapper wrapper) {
+		this.wrapper = wrapper;
+		this.jNodeCache = new JNodeCache(wrapper);
+		this.packageHelper = new PackageHelper(wrapper, jNodeCache);
 		reset();
 	}
 
 	public void reset() {
 		lastSearch = null;
-		jNodeCache = new JNodeCache();
+		jNodeCache.reset();
 		lastSearchOptions = new HashMap<>();
-		decompileBatches = null;
+		lastSearchPackage = null;
 		fullDecompilationFinished = false;
 	}
 
@@ -37,8 +42,25 @@ public class CacheObject {
 		return lastSearch;
 	}
 
+	@Nullable
+	public String getLastSearchPackage() {
+		return lastSearchPackage;
+	}
+
 	public void setLastSearch(String lastSearch) {
 		this.lastSearch = lastSearch;
+	}
+
+	public void setLastSearchPackage(String lastSearchPackage) {
+		this.lastSearchPackage = lastSearchPackage;
+	}
+
+	public int getMaxPkgLength() {
+		return maxPkgLength;
+	}
+
+	public void setMaxPkgLength(int maxPkgLength) {
+		this.maxPkgLength = maxPkgLength;
 	}
 
 	public JNodeCache getNodeCache() {
@@ -49,12 +71,8 @@ public class CacheObject {
 		return lastSearchOptions;
 	}
 
-	public @Nullable List<List<JavaClass>> getDecompileBatches() {
-		return decompileBatches;
-	}
-
-	public void setDecompileBatches(List<List<JavaClass>> decompileBatches) {
-		this.decompileBatches = decompileBatches;
+	public PackageHelper getPackageHelper() {
+		return packageHelper;
 	}
 
 	public boolean isFullDecompilationFinished() {

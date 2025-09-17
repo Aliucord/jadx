@@ -3,17 +3,14 @@ package jadx.tests.integration.debuginfo;
 import org.junit.jupiter.api.Test;
 
 import jadx.api.ICodeInfo;
-import jadx.api.ICodeWriter;
 import jadx.api.utils.CodeUtils;
 import jadx.core.dex.attributes.nodes.LineAttrNode;
 import jadx.core.dex.nodes.ClassNode;
 import jadx.core.dex.nodes.MethodNode;
 import jadx.tests.api.IntegrationTest;
 
-import static jadx.tests.api.utils.JadxMatchers.containsOne;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static jadx.tests.api.utils.assertj.JadxAssertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class TestReturnSourceLine extends IntegrationTest {
 
@@ -55,7 +52,7 @@ public class TestReturnSourceLine extends IntegrationTest {
 
 		ClassNode cls = getClassNode(TestCls.class);
 		ICodeInfo codeInfo = cls.getCode();
-		String[] lines = codeInfo.getCodeStr().split(ICodeWriter.NL);
+		String[] lines = codeInfo.getCodeStr().split("\\R");
 
 		MethodNode test1 = cls.searchMethodByShortId("test1(Z)I");
 		checkLine(lines, codeInfo, test1, 3, "return 1;");
@@ -72,11 +69,11 @@ public class TestReturnSourceLine extends IntegrationTest {
 	}
 
 	private static void checkLine(String[] lines, ICodeInfo cw, LineAttrNode node, int offset, String str) {
-		int nodeDefLine = CodeUtils.getLineNumForPos(cw.getCodeStr(), node.getDefPosition());
+		int nodeDefLine = CodeUtils.getLineNumForPos(cw.getCodeStr(), node.getDefPosition(), "\n");
 		int decompiledLine = nodeDefLine + offset;
-		assertThat(lines[decompiledLine - 1], containsOne(str));
+		assertThat(lines[decompiledLine - 1]).containsOne(str);
 		Integer sourceLine = cw.getCodeMetadata().getLineMapping().get(decompiledLine);
-		assertNotNull(sourceLine);
-		assertEquals(node.getSourceLine() + offset, (int) sourceLine);
+		assertThat(sourceLine).isNotNull();
+		assertThat((int) sourceLine).isEqualTo(node.getSourceLine() + offset);
 	}
 }

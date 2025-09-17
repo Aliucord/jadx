@@ -17,6 +17,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -71,7 +72,6 @@ import io.github.skylot.jdwp.JDWP.VirtualMachine.AllClassesWithGeneric.AllClasse
 import io.github.skylot.jdwp.JDWP.VirtualMachine.AllThreads.AllThreadsReplyData;
 import io.github.skylot.jdwp.JDWP.VirtualMachine.AllThreads.AllThreadsReplyDataThreads;
 import io.github.skylot.jdwp.JDWP.VirtualMachine.CreateString.CreateStringReplyData;
-import io.reactivex.annotations.NonNull;
 
 import jadx.api.plugins.input.data.AccessFlags;
 import jadx.gui.device.debugger.smali.RegisterInfo;
@@ -392,7 +392,7 @@ public class SmaliDebugger {
 
 	public interface MethodEntryListener {
 		/**
-		 * return ture to remove
+		 * return true to remove
 		 */
 		boolean entry(String mthSig);
 	}
@@ -533,7 +533,7 @@ public class SmaliDebugger {
 	/**
 	 * @param startIndex less than 0 means 0
 	 * @param len        less than or equals 0 means the maximum value 99 or the rest of the elements.
-	 * @return An entry, The key is the total length of this array when len is <= 0, otherwise 0,
+	 * @return An entry, The key is the total length of this array when len is &lt;= 0, otherwise 0,
 	 *         the value, if this array is an object array then it's object ids.
 	 */
 	public Entry<Integer, List<Long>> readArray(RuntimeValue reg, int startIndex, int len) throws SmaliDebuggerException {
@@ -1292,7 +1292,7 @@ public class SmaliDebugger {
 			return gen;
 		}
 
-		@NonNull
+		@NotNull
 		@Override
 		public String getSignature() {
 			return this.slot.genericSignature.trim();

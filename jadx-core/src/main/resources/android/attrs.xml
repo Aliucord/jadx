@@ -87,6 +87,14 @@
              theme does not set this value, meaning it is based on whether the
              window is floating. -->
         <attr name="backgroundDimEnabled" format="boolean" />
+        <!-- When windowBlurBehindEnabled is set, this is the amount of blur to apply
+             behind the window. The range is from 0, which means no blur, to 150.  -->
+        <attr name="windowBlurBehindRadius" format="dimension"/>
+        <!-- If set, everything behind the window will be blurred with radius
+             windowBackgroundBlurRadius. -->
+        <attr name="windowBlurBehindEnabled" format="boolean" />
+
+
         <!-- Color of background imagery used for popup windows. -->
         <attr name="colorPopupBackground" format="color" />
         <!-- Color used for list divider. -->
@@ -198,6 +206,9 @@
 
         <!-- The underline color and thickness for auto correction suggestion -->
         <attr name="textAppearanceAutoCorrectionSuggestion" format="reference" />
+
+        <!-- The underline color and thickness for grammar error suggestion -->
+        <attr name="textAppearanceGrammarErrorSuggestion" format="reference" />
 
         <!--  The underline color -->
         <attr name="textUnderlineColor" format="reference|color" />
@@ -351,6 +362,12 @@
              surface when the app has not drawn any content into this area. One example is
              when the user is resizing a window of an activity in multi-window mode. -->
         <attr name="windowBackgroundFallback" format="reference|color" />
+        <!-- Blur the screen behind the window with the bounds of the window.
+             The radius defines the size of the neighbouring area, from which pixels will be
+             averaged to form the final color for each pixel in the region.
+             A radius of 0 means no blur. The higher the radius, the denser the blur.
+             Corresponds to {@link android.view.Window#setBackgroundBlurRadius}. -->
+        <attr name="windowBackgroundBlurRadius" format="dimension" />
         <!-- Drawable to use as a frame around the window. -->
         <attr name="windowFrame" format="reference" />
         <!-- Flag indicating whether there should be no title on this window. -->
@@ -901,6 +918,10 @@
         <attr name="actionModeFindDrawable" format="reference" />
         <!-- Drawable to use for the Web Search action button in WebView selection action modes. -->
         <attr name="actionModeWebSearchDrawable" format="reference" />
+        <!-- Drawable to use for the Undo action button in WebView selection action modes. -->
+        <attr name="actionModeUndoDrawable" format="reference" />
+        <!-- Drawable to use for the Redo action button in WebView selection action modes. -->
+        <attr name="actionModeRedoDrawable" format="reference" />
 
         <!-- PopupWindow style to use for action modes when showing as a window overlay. -->
         <attr name="actionModePopupWindowStyle" format="reference" />
@@ -1108,6 +1129,27 @@
              to framework controls (via colorControlActivated). -->
         <attr name="colorAccent" format="color" />
 
+        <!-- Light accent color used on Material NEXT buttons. @hide -->
+        <attr name="colorAccentPrimary" format="color" />
+
+        <!-- Secondary accent color used on Material NEXT buttons. @hide -->
+        <attr name="colorAccentSecondary" format="color" />
+
+        <!-- Tertiary accent color used on Material NEXT buttons. @hide -->
+        <attr name="colorAccentTertiary" format="color" />
+
+        <!-- Darker accent color used on Material NEXT buttons. @hide -->
+        <attr name="colorAccentPrimaryVariant" format="color" />
+
+        <!-- Text color used on top of Material NEXT accent colors. @hide -->
+        <attr name="textColorOnAccent" format="color" />
+
+        <!-- Secondary darker accent color used on Material NEXT buttons. @hide -->
+        <attr name="colorAccentSecondaryVariant" format="color" />
+
+        <!-- Tertiary darker accent color used on Material NEXT buttons. @hide -->
+        <attr name="colorAccentTertiaryVariant" format="color" />
+
         <!-- The color applied to framework controls in their normal state. -->
         <attr name="colorControlNormal" format="color" />
 
@@ -1128,6 +1170,21 @@
 
         <!-- The color applied to the edge effect on scrolling containers. -->
         <attr name="colorEdgeEffect" format="color" />
+
+        <!-- The color applied to surfaces on top of colorBackground. @hide -->
+        <attr name="colorSurface" format="color" />
+
+        <!-- Alternative color applied to surfaces on top of colorBackground. @hide -->
+        <attr name="colorSurfaceHighlight" format="color" />
+
+        <!-- Alternative color applied to surfaces on top of colorBackground. @hide -->
+        <attr name="colorSurfaceVariant" format="color" />
+
+        <!-- Alternative color applied to surfaces on top of colorBackground. @hide -->
+        <attr name="colorSurfaceHeader" format="color" />
+
+        <!-- Color applied to effects. -->
+        <attr name="effectColor" format="color" />
 
         <!-- =================== -->
         <!-- Lighting properties -->
@@ -1157,6 +1214,183 @@
              a value of 'true' will not override any 'false' value in its parent chain nor will
              it prevent any 'false' in any of its children. -->
         <attr name="forceDarkAllowed" format="boolean" />
+
+        <!-- A lower-emphasized variant of the color on the fixed secondary branding color. @hide
+             -->
+        <attr name="materialColorOnSecondaryFixedVariant" format="color"/>
+        <!-- A lower-emphasized variant of the color on the fixed tertiary branding color. @hide
+             -->
+        <attr name="materialColorOnTertiaryFixedVariant" format="color"/>
+        <!-- The container color of surface the most lowered. @hide -->
+        <attr name="materialColorSurfaceContainerLowest" format="color"/>
+        <!-- A lower-emphasized variant of the color on the fixed primary branding color. @hide -->
+        <attr name="materialColorOnPrimaryFixedVariant" format="color"/>
+        <!-- A color that passes accessibility guidelines for text/iconography when drawn on top of
+             the secondary container color. @hide -->
+        <attr name="materialColorOnSecondaryContainer" format="color"/>
+        <!-- A color that passes accessibility guidelines for text/iconography when drawn on top of
+             the tertiary container color. @hide -->
+        <attr name="materialColorOnTertiaryContainer" format="color"/>
+        <!-- The container color of surface slightly lowered, which replaces the previous surface
+             at elevation level 1. @hide -->
+        <attr name="materialColorSurfaceContainerLow" format="color"/>
+        <!-- A color that passes accessibility guidelines for text/iconography when drawn on top of
+             the primary container color. @hide -->
+        <attr name="materialColorOnPrimaryContainer" format="color"/>
+        <!-- A stronger, more emphasized variant of the fixed secondary branding color. @hide -->
+        <attr name="materialColorSecondaryFixedDim" format="color"/>
+        <!-- A tonal variation of the on error color that passes accessibility guidelines for
+             text/iconography when drawn on top of error container. @hide -->
+        <attr name="materialColorOnErrorContainer" format="color"/>
+        <!-- The color text/iconography when drawn on top of the fixed secondary branding color.
+             @hide -->
+        <attr name="materialColorOnSecondaryFixed" format="color"/>
+        <!-- The "on surface" inverse color, useful for inverted backgrounds. @hide -->
+        <attr name="materialColorOnSurfaceInverse" format="color"/>
+        <!-- A stronger, more emphasized variant of the fixed tertiary branding color. @hide -->
+        <attr name="materialColorTertiaryFixedDim" format="color"/>
+        <!-- The color text/iconography when drawn on top of the fixed tertiary branding color.
+             @hide -->
+        <attr name="materialColorOnTertiaryFixed" format="color"/>
+        <!-- A stronger, more emphasized variant of the fixed primary branding color. @hide -->
+        <attr name="materialColorPrimaryFixedDim" format="color"/>
+        <!-- A tonal variation of the secondary color suitable for background color of container
+             views. @hide -->
+        <attr name="materialColorSecondaryContainer" format="color"/>
+        <!-- A tonal variation of the error color suitable for background color of container views.
+             @hide -->
+        <attr name="materialColorErrorContainer" format="color"/>
+        <!-- The color text/iconography when drawn on top of the fixed primary branding color.
+             @hide -->
+        <attr name="materialColorOnPrimaryFixed" format="color"/>
+        <!-- The inverse color of colorPrimary. @hide -->
+        <attr name="materialColorPrimaryInverse" format="color"/>
+        <!-- A secondary branding color for the app, which stays the same between light and dark
+             themes. @hide -->
+        <attr name="materialColorSecondaryFixed" format="color"/>
+        <!-- The surface inverse color, useful for inverted backgrounds. @hide -->
+        <attr name="materialColorSurfaceInverse" format="color"/>
+        <!-- A tonal variation of the surface color. @hide -->
+        <attr name="materialColorSurfaceVariant" format="color"/>
+        <!-- A tonal variation of the tertiary color suitable for background color of container
+             views. @hide -->
+        <attr name="materialColorTertiaryContainer" format="color"/>
+        <!-- A tertiary branding color for the app, which stays the same between light and dark
+             themes. @hide -->
+        <attr name="materialColorTertiaryFixed" format="color"/>
+        <!-- A tonal variation of the primary color suitable for background color of container
+             views. @hide -->
+        <attr name="materialColorPrimaryContainer" format="color"/>
+        <!-- A color that passes accessibility guidelines for text/iconography when drawn on top of
+             background. @hide -->
+        <attr name="materialColorOnBackground" format="color"/>
+        <!-- A primary branding color for the app, which stays the same between light and dark
+             themes. @hide -->
+        <attr name="materialColorPrimaryFixed" format="color"/>
+        <!-- A color that passes accessibility guidelines for text/iconography when drawn on top of
+             secondary. @hide -->
+        <attr name="materialColorOnSecondary" format="color"/>
+        <!-- A color that passes accessibility guidelines for text/iconography when drawn on top of
+             tertiary. @hide -->
+        <attr name="materialColorOnTertiary" format="color"/>
+        <!-- The surface color which always stay the dimmest in either dark or light theme. @hide
+             -->
+        <attr name="materialColorSurfaceDim" format="color"/>
+        <!-- The surface color which always stay the brightest in either dark or light theme. @hide
+             -->
+        <attr name="materialColorSurfaceBright" format="color"/>
+        <!-- The secondary branding color for the app, usually a bright complement to the primary
+             branding color. @hide -->
+        <attr name="materialColorSecondary" format="color"/>
+        <!-- A color that passes accessibility guidelines for text/iconography when drawn on top of
+             error. @hide -->
+        <attr name="materialColorOnError" format="color"/>
+        <!-- The color of surfaces such as cards, sheets, menus. @hide -->
+        <attr name="materialColorSurface" format="color"/>
+        <!-- The container color of surface slightly elevated, which replaces the previous surface
+             at elevation level 3. @hide -->
+        <attr name="materialColorSurfaceContainerHigh" format="color"/>
+        <!-- The tertiary branding color for the app, usually a bright complement to the primary
+             branding color. @hide -->
+        <attr name="materialColorTertiary" format="color"/>
+        <!-- The container color of surface the most elevated, which replaces the previous surface
+             variant. @hide -->
+        <attr name="materialColorSurfaceContainerHighest" format="color"/>
+        <!-- A tonal variation of the on surface color that passes accessibility guidelines for
+             text/iconography when drawn on top of surface variant. @hide -->
+        <attr name="materialColorOnSurfaceVariant" format="color"/>
+        <!-- A color meant to be used in element outlines. @hide -->
+        <attr name="materialColorOutline" format="color"/>
+        <!-- A color meant to be used in element outlines on the surface-variant color. @hide -->
+        <attr name="materialColorOutlineVariant" format="color"/>
+        <!-- A color that passes accessibility guidelines for text/iconography when drawn on top of
+             primary. @hide -->
+        <attr name="materialColorOnPrimary" format="color"/>
+        <!-- A color that passes accessibility guidelines for text/iconography when drawn on top of
+             surface. @hide -->
+        <attr name="materialColorOnSurface" format="color"/>
+        <!-- The container color of surface, which replaces the previous surface at elevation level
+             2. @hide -->
+        <attr name="materialColorSurfaceContainer" format="color"/>
+        <!-- The container color of surface, which replaces the previous surface at elevation level
+             2. @hide -->
+        <attr name="materialColorSurfaceContainer" format="color"/>
+         <!-- The primary branding color for the app. By default, this is the color applied to the
+             action bar background. @hide -->
+        <attr name="materialColorPrimary" format="color"/>
+        <!-- The secondary branding color for the app, usually a bright complement to the primary
+             branding color. @hide -->
+        <attr name="materialColorSecondary" format="color"/>
+        <!-- A color that passes accessibility guidelines for text/iconography when drawn on top
+             of tertiary. @hide -->
+        <attr name="materialColorTertiary" format="color"/>
+        <!-- The error color for the app, intended to draw attention to error conditions. @hide -->
+        <attr name="materialColorError" format="color"/>
+
+        <!-- System Custom Tokens-->
+        <!-- @hide -->
+        <attr name="customColorWidgetBackground" format="color"/>
+        <!-- @hide -->
+        <attr name="customColorClockHour" format="color"/>
+        <!-- @hide -->
+        <attr name="customColorClockMinute" format="color"/>
+        <!-- @hide -->
+        <attr name="customColorClockSecond" format="color"/>
+        <!-- @hide -->
+        <attr name="customColorThemeApp" format="color"/>
+        <!-- @hide -->
+        <attr name="customColorOnThemeApp" format="color"/>
+        <!-- @hide -->
+        <attr name="customColorThemeAppRing" format="color"/>
+        <!-- @hide -->
+        <attr name="customColorOnThemeAppRing" format="color"/>
+        <!-- @hide -->
+        <attr name="customColorBrandA" format="color"/>
+        <!-- @hide -->
+        <attr name="customColorBrandB" format="color"/>
+        <!-- @hide -->
+        <attr name="customColorBrandC" format="color"/>
+        <!-- @hide -->
+        <attr name="customColorBrandD" format="color"/>
+        <!-- @hide -->
+        <attr name="customColorUnderSurface" format="color"/>
+        <!-- @hide -->
+        <attr name="customColorShadeActive" format="color"/>
+        <!-- @hide -->
+        <attr name="customColorOnShadeActive" format="color"/>
+        <!-- @hide -->
+        <attr name="customColorOnShadeActiveVariant" format="color"/>
+        <!-- @hide -->
+        <attr name="customColorShadeInactive" format="color"/>
+        <!-- @hide -->
+        <attr name="customColorOnShadeInactive" format="color"/>
+        <!-- @hide -->
+        <attr name="customColorOnShadeInactiveVariant" format="color"/>
+        <!-- @hide -->
+        <attr name="customColorShadeDisabled" format="color"/>
+        <!-- @hide -->
+        <attr name="customColorOverviewBackground" format="color"/>
+
     </declare-styleable>
 
     <!-- **************************************************************** -->
@@ -1259,7 +1493,12 @@
         <!-- Can be combined with <var>text</var> and its variations to
              allow multiple lines of text in the field.  If this flag is not set,
              the text field will be constrained to a single line.  Corresponds to
-             {@link android.text.InputType#TYPE_TEXT_FLAG_MULTI_LINE}. -->
+             {@link android.text.InputType#TYPE_TEXT_FLAG_MULTI_LINE}.
+
+             Note: If this flag is not set and the text field doesn't have max length limit, the
+             framework automatically set maximum length of the characters to 5000 for the
+             performance reasons.
+             -->
         <flag name="textMultiLine" value="0x00020001" />
         <!-- Can be combined with <var>text</var> and its variations to
              indicate that though the regular text view should not be multiple
@@ -1271,6 +1510,11 @@
              dictionary-based word suggestions.  Corresponds to
              {@link android.text.InputType#TYPE_TEXT_FLAG_NO_SUGGESTIONS}. -->
         <flag name="textNoSuggestions" value="0x00080001" />
+        <!-- Can be combined with <var>text</var> and its variations to
+             indicate that if there is extra information, the IME should provide
+             {@link android.view.inputmethod.TextAttribute}.  Corresponds to
+             {@link android.text.InputType#TYPE_TEXT_FLAG_ENABLE_TEXT_CONVERSION_SUGGESTIONS}. -->
+        <flag name="textEnableTextConversionSuggestions" value="0x00100001" />
         <!-- Text that will be used as a URI.  Corresponds to
              {@link android.text.InputType#TYPE_CLASS_TEXT} |
              {@link android.text.InputType#TYPE_TEXT_VARIATION_URI}. -->
@@ -1926,6 +2170,22 @@
         <enum name="KEYCODE_THUMBS_UP" value="286" />
         <enum name="KEYCODE_THUMBS_DOWN" value="287" />
         <enum name="KEYCODE_PROFILE_SWITCH" value="288" />
+        <enum name="KEYCODE_VIDEO_APP_1" value="289" />
+        <enum name="KEYCODE_VIDEO_APP_2" value="290" />
+        <enum name="KEYCODE_VIDEO_APP_3" value="291" />
+        <enum name="KEYCODE_VIDEO_APP_4" value="292" />
+        <enum name="KEYCODE_VIDEO_APP_5" value="293" />
+        <enum name="KEYCODE_VIDEO_APP_6" value="294" />
+        <enum name="KEYCODE_VIDEO_APP_7" value="295" />
+        <enum name="KEYCODE_VIDEO_APP_8" value="296" />
+        <enum name="KEYCODE_FEATURED_APP_1" value="297" />
+        <enum name="KEYCODE_FEATURED_APP_2" value="298" />
+        <enum name="KEYCODE_FEATURED_APP_3" value="299" />
+        <enum name="KEYCODE_FEATURED_APP_4" value="300" />
+        <enum name="KEYCODE_DEMO_APP_1" value="301" />
+        <enum name="KEYCODE_DEMO_APP_2" value="302" />
+        <enum name="KEYCODE_DEMO_APP_3" value="303" />
+        <enum name="KEYCODE_DEMO_APP_4" value="304" />
     </attr>
 
     <!-- ***************************************************************** -->
@@ -1941,6 +2201,7 @@
     <declare-styleable name="Window">
         <attr name="windowBackground" />
         <attr name="windowBackgroundFallback" />
+        <attr name="windowBackgroundBlurRadius" />
         <attr name="windowContentOverlay" />
         <attr name="windowFrame" />
         <attr name="windowNoTitle" />
@@ -1956,6 +2217,8 @@
         <attr name="textColor" />
         <attr name="backgroundDimEnabled" />
         <attr name="backgroundDimAmount" />
+        <attr name="windowBlurBehindEnabled" />
+        <attr name="windowBlurBehindRadius" />
         <attr name="windowActionBar" />
         <attr name="windowActionModeOverlay" />
         <attr name="windowActionBarOverlay" />
@@ -2076,7 +2339,17 @@
              {@link android.R.attr#windowDrawsSystemBarBackgrounds} and the status bar must not
              have been requested to be translucent with
              {@link android.R.attr#windowTranslucentStatus}.
-             Corresponds to {@link android.view.Window#setStatusBarColor(int)}. -->
+             Corresponds to {@link android.view.Window#setStatusBarColor(int)}.
+             <p>If the color is transparent and the window enforces the status bar contrast, the
+             system will determine whether a scrim is necessary and draw one on behalf of the app to
+             ensure that the status bar has enough contrast with the contents of this app, and set
+             an appropriate effective bar background accordingly.
+             See: {@link android.R.attr#enforceStatusBarContrast}
+             <p>If the window belongs to an app targeting
+             {@link android.os.Build.VERSION_CODES#VANILLA_ICE_CREAM VANILLA_ICE_CREAM} or above,
+             this attribute is ignored.
+             @deprecated Draw proper background behind
+                         {@link android.view.WindowInsets.Type#statusBars()}} instead. -->
         <attr name="statusBarColor" format="color" />
 
         <!-- The color for the navigation bar. If the color is not opaque, consider setting
@@ -2086,7 +2359,18 @@
              {@link android.R.attr#windowDrawsSystemBarBackgrounds} and the navigation bar must not
              have been requested to be translucent with
              {@link android.R.attr#windowTranslucentNavigation}.
-             Corresponds to {@link android.view.Window#setNavigationBarColor(int)}. -->
+             Corresponds to {@link android.view.Window#setNavigationBarColor(int)}.
+             <p>If the color is transparent and the window enforces the navigation bar contrast, the
+             system will determine whether a scrim is necessary and draw one on behalf of the app to
+             ensure that the navigation bar has enough contrast with the contents of this app, and
+             set an appropriate effective bar background accordingly.
+             See: {@link android.R.attr#enforceNavigationBarContrast}
+             <p>If the window belongs to an app targeting
+             {@link android.os.Build.VERSION_CODES#VANILLA_ICE_CREAM VANILLA_ICE_CREAM} or above,
+             this attribute is ignored.
+             @deprecated Draw proper background behind
+                         {@link android.view.WindowInsets.Type#navigationBars()} or
+                         {@link android.view.WindowInsets.Type#tappableElement()} instead. -->
         <attr name="navigationBarColor" format="color" />
 
         <!-- Shows a thin line of the specified color between the navigation bar and the app
@@ -2095,7 +2379,13 @@
              {@link android.R.attr#windowDrawsSystemBarBackgrounds} and the navigation bar must not
              have been requested to be translucent with
              {@link android.R.attr#windowTranslucentNavigation}.
-             Corresponds to {@link android.view.Window#setNavigationBarDividerColor(int)}. -->
+             Corresponds to {@link android.view.Window#setNavigationBarDividerColor(int)}.
+             <p>If the window belongs to an app targeting
+             {@link android.os.Build.VERSION_CODES#VANILLA_ICE_CREAM VANILLA_ICE_CREAM} or above,
+             this attribute is ignored.
+             @deprecated Draw proper background behind
+                         {@link android.view.WindowInsets.Type#navigationBars()} or
+                         {@link android.view.WindowInsets.Type#tappableElement()} instead. -->
         <attr name="navigationBarDividerColor" format="color" />
 
         <!-- Sets whether the system should ensure that the status bar has enough
@@ -2111,7 +2401,9 @@
              <p>If the app does not target at least {@link android.os.Build.VERSION_CODES#Q Q},
              this attribute is ignored.
 
-             @see android.view.Window#setStatusBarContrastEnforced -->
+             @see android.view.Window#setStatusBarContrastEnforced
+             @deprecated Draw proper background behind
+                         {@link android.view.WindowInsets.Type#statusBars()}} instead. -->
         <attr name="enforceStatusBarContrast" format="boolean" />
 
         <!-- Sets whether the system should ensure that the navigation bar has enough
@@ -2139,6 +2431,10 @@
         <!-- Elevation to use for the window. -->
         <attr name="windowElevation" format="dimension" />
 
+        <!-- Flag indicating whether this window should skip movement animations.
+             See also {@link android.view.WindowManager.LayoutParams#setCanPlayMoveAnimation} -->
+        <attr name="windowNoMoveAnimation" format="boolean" />
+
         <!-- Whether to clip window content to the outline of the window background. -->
         <attr name="windowClipToOutline" format="boolean" />
 
@@ -2149,7 +2445,9 @@
              have been requested to be translucent with
              {@link android.R.attr#windowTranslucentStatus}.
              Corresponds to setting {@link android.view.View#SYSTEM_UI_FLAG_LIGHT_STATUS_BAR} on
-             the decor view. -->
+             the decor view and
+             {@link android.view.WindowInsetsController#APPEARANCE_LIGHT_STATUS_BARS} on the
+             {@link android.view.WindowInsetsController}. -->
         <attr name="windowLightStatusBar" format="boolean" />
 
         <!-- Reference to a drawable to be used as the splash screen content of the window. This
@@ -2160,6 +2458,7 @@
              Note that even if no splashscreen content is set on the theme, the system may still
              show a splash screen using the other attributes on the theme, like the
              {@link android.R.attr#windowBackground}.
+             {@deprecated Use windowSplashscreenAnimatedIcon instead.}
              -->
         <attr name="windowSplashscreenContent" format="reference" />
 
@@ -2170,12 +2469,16 @@
              have been requested to be translucent with
              {@link android.R.attr#windowTranslucentNavigation}.
              Corresponds to setting {@link android.view.View#SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR} on
-             the decor view. -->
+             the decor view and
+             {@link android.view.WindowInsetsController#APPEARANCE_LIGHT_NAVIGATION_BARS} on the
+             {@link android.view.WindowInsetsController}. -->
         <attr name="windowLightNavigationBar" format="boolean" />
 
         <!-- Controls how the window is laid out if there is a {@code DisplayCutout}.
         <p>
-        Defaults to {@code default}.
+        Defaults to {@code default}. But if the window fills the screen, and it belongs to an app
+        targeting {@link android.os.Build.VERSION_CODES#VANILLA_ICE_CREAM VANILLA_ICE_CREAM} or
+        above, the behavior will be the same as specifying {@code always} regardless.
         <p>
         See also
         {@link android.view.WindowManager.LayoutParams#layoutInDisplayCutoutMode
@@ -2228,6 +2531,71 @@
             -->
             <enum name="always" value="3" />
         </attr>
+
+        <!-- The background color for the splash screen, if not specify then system will
+             calculate from windowBackground. -->
+        <attr name="windowSplashScreenBackground" format="color"/>
+
+        <!-- Replace an icon in the center of the starting window, if the object is animated
+             and drawable(e.g. AnimationDrawable, AnimatedVectorDrawable), then it will also
+             play the animation while showing the starting window. -->
+        <attr name="windowSplashScreenAnimatedIcon" format="reference"/>
+        <!-- The duration, in milliseconds, of the window splash screen icon animation duration
+             when playing the splash screen starting window. The maximum animation duration should
+             be limited below 1000ms.
+              @deprecated Not used by framework starting from API level 33. The system estimates the
+               duration of the vector animation automatically. -->
+        <attr name="windowSplashScreenAnimationDuration" format="integer"/>
+
+        <!-- Place a drawable image in the bottom of the starting window. The image can be used to
+             represent the branding of the application. -->
+        <attr name="windowSplashScreenBrandingImage" format="reference"/>
+        <!-- Set a background behind the splash screen icon. This is useful if there is not enough
+             contrast between the window background and the icon. Note the shape would also be
+             masking like an icon. -->
+        <attr name="windowSplashScreenIconBackgroundColor" format="color"/>
+
+        <!-- Specify whether this application always wants the icon to be displayed on the splash
+             screen. -->
+        <attr name="windowSplashScreenBehavior">
+            <!-- The icon is shown when the launching activity sets the splashScreenStyle to
+                 SPLASH_SCREEN_STYLE_ICON. If the launching activity does not specify any style,
+                 follow the system behavior. -->
+            <enum name="default" value="0" />
+            <!-- The icon is shown unless the launching app specified SPLASH_SCREEN_STYLE_EMPTY -->
+            <enum name="icon_preferred" value="1" />
+        </attr>
+        <!-- Offer Window the ability to opt out the UI Toolkit discrete variable refresh rate.
+             This feature allows device to adjust refresh rate as needed and
+             can be useful for power saving.
+             Set to false to reduce the frame rate optimizations on devices with
+             variable refresh rate screens.
+             The default is true. -->
+        <attr name="windowIsFrameRatePowerSavingsBalanced" format="boolean"/>
+
+        <!-- Flag indicating whether this window would opt-out the edge-to-edge enforcement.
+
+             <p>If this is false, the edge-to-edge enforcement will be applied to the window if it
+             belongs to an app targeting
+             {@link android.os.Build.VERSION_CODES#VANILLA_ICE_CREAM VANILLA_ICE_CREAM} or above.
+             The affected behaviors are:
+             <ul>
+                 <li>The framework will not fit the content view to the insets and will just pass
+                 through the {@link android.view.WindowInsets} to the content view, as if calling
+                 {@link android.view.Window#setDecorFitsSystemWindows(boolean)} with false.
+                 <li>{@link android.view.WindowManager.LayoutParams#layoutInDisplayCutoutMode} of
+                 the fill-screen windows will behave as specifying {@link
+                 android.view.WindowManager.LayoutParams#LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS}.
+                 <li>The framework will set {@link android.R.attr#statusBarColor},
+                 {@link android.R.attr#navigationBarColor}, and
+                 {@link android.R.attr#navigationBarDividerColor} to transparent.
+             </ul>
+
+             <p>If this is true, the edge-to-edge enforcement won't be applied. However, this
+             attribute will be deprecated and disabled in a future SDK level.
+
+             <p>This is false by default. -->
+        <attr name="windowOptOutEdgeToEdgeEnforcement" format="boolean"/>
     </declare-styleable>
 
     <!-- The set of attributes that describe a AlertDialog's theme. -->
@@ -2305,6 +2673,15 @@
         <!--  When closing the current activity, this is the animation that is
               run on the current activity (which is exiting the screen). -->
         <attr name="activityCloseExitAnimation" format="reference" />
+        <!--  When closing a dream activity, this is the animation that is
+              run on the dream activity (which is exiting the screen). -->
+        <attr name="dreamActivityCloseExitAnimation" format="reference" />
+        <!--  When opening a dream activity, this is the animation that is
+              run on the dream activity (which is entering the screen). -->
+        <attr name="dreamActivityOpenEnterAnimation" format="reference" />
+        <!--  When opening a dream activity, this is the animation that is
+              run on the old activity (which is exiting the screen). -->
+        <attr name="dreamActivityOpenExitAnimation" format="reference" />
         <!--  When opening an activity in a new task, this is the animation that is
               run on the activity of the new task (which is entering the screen). -->
         <attr name="taskOpenEnterAnimation" format="reference" />
@@ -2526,6 +2903,10 @@
                  and its children (if any) will not be traversed. -->
             <flag name="noExcludeDescendants" value="0x8" />
         </attr>
+
+        <!-- Boolean that hints the Android System that the view is credential and associated with
+             CredentialManager -->
+        <attr name="isCredential" format="boolean" />
 
         <!-- Hints the Android System whether the this View should be considered a scroll capture target. -->
         <attr name="scrollCaptureHint">
@@ -2762,15 +3143,15 @@
              representation this attribute can be used for providing such. -->
         <attr name="contentDescription" format="string" localization="suggested" />
 
-        <!-- Sets the id of a view before which this one is visited in accessibility traversal.
-             A screen-reader must visit the content of this view before the content of the one
-             it precedes.
+        <!-- Sets the id of a view that screen readers are requested to visit after this view.
+             Requests that a screen-reader visits the content of this view before the content of the
+             one it precedes. This does nothing if either view is not important for accessibility.
              {@see android.view.View#setAccessibilityTraversalBefore(int)} -->
         <attr name="accessibilityTraversalBefore" format="integer" />
 
-        <!-- Sets the id of a view after which this one is visited in accessibility traversal.
-             A screen-reader must visit the content of the other view before the content of
-             this one.
+        <!-- Sets the id of a view that screen readers are requested to visit before this view.
+             Requests that a screen-reader visits the content of the other view before the content
+             of this one. This does nothing if either view is not important for accessibility.
              {@see android.view.View#setAccessibilityTraversalAfter(int)} -->
         <attr name="accessibilityTraversalAfter" format="integer" />
 
@@ -2779,7 +3160,11 @@
              exactly one parameter of type View. For instance, if you specify
              <code>android:onClick="sayHello"</code>, you must declare a
              <code>public void sayHello(View v)</code> method of your context
-             (typically, your Activity). -->
+             (typically, your Activity).
+             {@deprecated View actually traverses the Context
+             hierarchy looking for the relevant method, which is fragile (an intermediate
+             ContextWrapper adding a same-named method would change behavior) and restricts
+             bytecode optimizers such as R8. Instead, use View.setOnClickListener.}-->
         <attr name="onClick" format="string" />
 
         <!-- Defines over-scrolling behavior. This property is used only if the
@@ -2945,6 +3330,20 @@
             <enum name="noHideDescendants" value="4" />
         </attr>
 
+        <!-- Describes whether this view should allow interactions from AccessibilityServices only
+             if the service sets the isAccessibilityTool property. -->
+        <attr name="accessibilityDataSensitive" format="integer">
+            <!-- The system determines whether the view's accessibility data is sensitive
+                 - default (recommended). -->
+            <enum name="auto" value="0" />
+            <!-- Allow interactions from AccessibilityServices only if the service sets the
+                 isAccessibilityTool property. -->
+            <enum name="yes" value="1" />
+            <!-- Allow interactions from all AccessibilityServices, regardless of their
+                 isAccessibilityTool property. -->
+            <enum name="no" value="2" />
+        </attr>
+
         <!-- Indicates to accessibility services whether the user should be notified when
              this view changes. -->
         <attr name="accessibilityLiveRegion" format="integer">
@@ -2959,7 +3358,7 @@
 
         <!-- Specifies the id of a view for which this view serves as a label for
              accessibility purposes. For example, a TextView before an EditText in
-             the UI usually specifies what infomation is contained in the EditText.
+             the UI usually specifies what information is contained in the EditText.
              Hence, the TextView is a label for the EditText. -->
         <attr name="labelFor" format="reference" />
 
@@ -3151,6 +3550,8 @@
             <enum name="grab" value="1020" />
             <!-- Pointer icon of a hand sign while grabbing something. -->
             <enum name="grabbing" value="1021" />
+            <!-- Pointer icon indicating handwriting. -->
+            <enum name="handwriting" value="1022"/>
         </attr>
 
         <!-- Whether this view has elements that may overlap when drawn. See
@@ -3197,6 +3598,9 @@
         <!-- Whether or not this view is a heading for accessibility purposes. -->
         <attr name="accessibilityHeading" format="boolean"/>
 
+        <!-- Whether or not allow clicks on disabled view. -->
+        <attr name="allowClickWhenDisabled" format="boolean"/>
+
         <!-- Sets the color of the spot shadow that is drawn when the view has a positive Z or
              elevation value.
              <p>
@@ -3226,6 +3630,88 @@
              a value of 'true' will not override any 'false' value in its parent chain nor will
              it prevent any 'false' in any of its children. -->
         <attr name="forceDarkAllowed" format="boolean" />
+
+        <!-- <p>Whether the View's Outline should be used to clip the contents of the View.
+             <p>Only a single non-rectangular clip can be applied on a View at any time. Circular
+             clips from a
+             {@link android.view.ViewAnimationUtils#createCircularReveal(View, int, int, float,
+             float)} circular reveal animation take priority over Outline clipping, and child
+             Outline clipping takes priority over Outline clipping done by a parent.
+             <p>Note that this flag will only be respected if the View's Outline returns true from
+             {@link android.graphics.Outline#canClip()}. -->
+        <attr name="clipToOutline" format="boolean" />
+
+        <!-- <p> Sets a preference to keep the bounds of this view clear from floating windows
+            above this view's window. This informs the system that the view is considered a vital
+            area for the user and that ideally it should not be covered. Setting this is only
+            appropriate for UI where the user would likely take action to uncover it.
+            <p>The system will try to respect this, but when not possible will ignore it.
+            <p>This is equivalent to {@link android.view.View#setPreferKeepClear}.-->
+        <attr name="preferKeepClear" format="boolean" />
+
+        <!-- <p>Whether or not the auto handwriting initiation is enabled in this View.
+             <p>For a view with an active {@link android.view.inputmethod.InputConnection},
+             if auto handwriting initiation is enabled, stylus movement within its view boundary
+             will automatically trigger the handwriting mode.
+             See {@link android.view.View#setAutoHandwritingEnabled}.
+             <p>The default value of this flag is configurable by the device manufacturer. -->
+        <attr name="autoHandwritingEnabled" format="boolean" />
+
+        <!-- <p>The amount of offset that is applied to the left edge of the view's stylus
+             handwriting bounds, which by default is the view's visible bounds.
+
+             <p>This attribute is mainly used to enlarge the view's handwriting bounds for better
+             user experience. Note that a positive offset means the bounds is extended outwards,
+             and vice versa. See {@link android.view.View#setHandwritingBoundsOffsets}
+
+             <p> The default value is 10dp for {@link android.widget.TextView} and
+             {@link android.widget.EditText}, and 0dp for other views. -->
+        <attr name="handwritingBoundsOffsetLeft" format="dimension" />
+
+        <!-- <p>The amount of offset that is applied to the top edge of the view's stylus
+             handwriting bounds, which by default is the view's visible bounds.
+
+             <p>This attribute is mainly used to enlarge the view's handwriting bounds for better
+             user experience. Note that a positive offset means the bounds is extended outwards,
+             and vice versa. See {@link android.view.View#setHandwritingBoundsOffsets}
+
+             <p> The default value is 40dp for {@link android.widget.TextView} and
+             {@link android.widget.EditText}, and 0dp for other views. -->
+        <attr name="handwritingBoundsOffsetTop" format="dimension" />
+
+        <!-- <p>The amount of offset that is applied to the right edge of the view's stylus
+             handwriting bounds, which by default is the view's visible bounds.
+
+             <p>This attribute is mainly used to enlarge the view's handwriting bounds for better
+             user experience. Note that a positive offset means the bounds is extended outwards,
+             and vice versa. See {@link android.view.View#setHandwritingBoundsOffsets}
+
+             <p> The default value is 10dp for {@link android.widget.TextView} and
+             {@link android.widget.EditText}, and 0dp for other views. -->
+        <attr name="handwritingBoundsOffsetRight" format="dimension" />
+
+        <!-- <p>The amount of offset that is applied to the bottom edge of the view's stylus
+             handwriting bounds, which by default is the view's visible bounds.
+
+             <p>This attribute is mainly used to enlarge the view's handwriting bounds for better
+             user experience. Note that a positive offset means the bounds is extended outwards,
+             and vice versa. See {@link android.view.View#setHandwritingBoundsOffsets}
+
+             <p> The default value is 40dp for {@link android.widget.TextView} and
+             {@link android.widget.EditText}, and 0dp for all other views. -->
+        <attr name="handwritingBoundsOffsetBottom" format="dimension" />
+
+        <!-- Sets whether this view renders sensitive content. -->
+        <!-- @FlaggedApi("android.view.flags.sensitive_content_app_protection_api") -->
+        <attr name="contentSensitivity">
+            <!-- Let the Android System use its heuristics to determine if the view renders
+             sensitive content. -->
+            <enum name="auto" value="0" />
+            <!-- This view renders sensitive content. -->
+            <enum name="sensitive" value="0x1" />
+            <!-- This view doesn't render sensitive content. -->
+            <enum name="notSensitive" value="0x2" />
+        </attr>
     </declare-styleable>
 
     <!-- Attributes that can be assigned to a tag for a particular View. -->
@@ -3315,11 +3801,11 @@
 
         <!-- Sets whether this ViewGroup should split MotionEvents
              to separate child views during touch event dispatch.
-             If false (default), touch events will be dispatched to
+             If false (default prior to HONEYCOMB), touch events will be dispatched to
              the child view where the first pointer went down until
              the last pointer goes up.
-             If true, touch events may be dispatched to multiple children.
-             MotionEvents for each pointer will be dispatched to the child
+             If true (default for HONEYCOMB and later), touch events may be dispatched to
+             multiple children. MotionEvents for each pointer will be dispatched to the child
              view where the initial ACTION_DOWN event happened.
              See {@link android.view.ViewGroup#setMotionEventSplittingEnabled(boolean)}
              for more information. -->
@@ -3478,6 +3964,10 @@
         <!-- Component name of an activity that allows the user to modify
              the settings for this service. -->
         <attr name="settingsActivity" format="string" />
+        <!-- Component name of an activity that allows the user to modify
+             on-screen keyboards variants (e.g. different language or layout) for this service. -->
+        <!-- @FlaggedApi("android.view.inputmethod.ime_switcher_revamp") -->
+        <attr name="languageSettingsActivity" format="string"/>
         <!-- Set to true in all of the configurations for which this input
              method should be considered an option as the default. -->
         <attr name="isDefault" format="boolean" />
@@ -3493,9 +3983,84 @@
         <!-- Specifies if an IME can only be used while a device is in VR mode or on a dedicated
              device -->
         <attr name="isVrOnly" format="boolean"/>
+        <!-- Specifies if an IME can only be used on a display created by a virtual device.
+             @see android.companion.virtual.VirtualDeviceParams.Builder#setInputMethodComponent
+             @hide @SystemApi -->
+        <!-- @FlaggedApi("android.companion.virtual.flags.vdm_custom_ime") -->
+        <attr name="isVirtualDeviceOnly" format="boolean"/>
         <attr name="__removed2" format="boolean" />
         <!-- Specifies whether the IME supports showing inline suggestions. -->
         <attr name="supportsInlineSuggestions" format="boolean" />
+        <!-- Specifies whether the IME supports showing inline suggestions when touch
+             exploration is enabled. This does nothing if supportsInlineSuggestions is false.
+             The default value is false and most IMEs should not set this
+             to true since the older menu-style Autofill works better with touch exploration.
+             This attribute should be set to true in special situations, such as if this is an
+             accessibility-focused IME which blocks user interaction with the app window while the
+             IME is displayed. -->
+        <attr name="supportsInlineSuggestionsWithTouchExploration" format="boolean" />
+        <!-- Specifies whether the IME suppresses system spell checker.
+             The default value is false. If an IME sets this attribute to true,
+             the system spell checker will be disabled while the IME has an
+             active input session. -->
+        <attr name="suppressesSpellChecker" format="boolean" />
+        <!-- Specifies whether the IME wants to be shown in the Input Method picker. Defaults to
+             true. Set this to false if the IME is intended to be accessed programmatically.
+             <p>
+             Note: This functions as a hint to the system, which may choose to ignore this
+             preference in certain situations or in future releases.-->
+        <attr name="showInInputMethodPicker" format="boolean" />
+        <!-- Specify one or more configuration changes that the IME will handle itself. If not
+             specified, the IME will be restarted if any of these configuration changes happen in
+              the system.  Otherwise, the IME will remain running and its
+             {@link android.inputmethodservice.InputMethodService#onConfigurationChanged}
+             method is called with the new configuration.
+             <p>Note that all of these configuration changes can impact the
+             resource values seen by the application, so you will generally need
+             to re-retrieve all resources (including view layouts, drawables, etc)
+             to correctly handle any configuration change.-->
+        <attr name="configChanges" />
+        <!-- Specifies whether the IME supports Handwriting using stylus. Defaults to false.
+            When IME implements support for stylus handwriting, on every ACTION_DOWN with stylus
+            on an editor,
+            {@link android.inputmethodservice.InputMethodService#onStartStylusHandwriting()}
+            is called.
+            If IME is ready for stylus input, it must return {@code true} for Handwriting sessions
+            to start. IME should attach it's View that renders Ink on screen to stylus handwriting
+            inking window
+            {@link android.inputmethodservice.InputMethodService#getStylusHandwritingWindow()}.
+            IME will then receive Stylus MotionEvent(s) on DecorView i.e. the Inking view
+            {@link android.view.View#onTouchEvent(MotionEvent)} attached by IME to Ink window.
+            Handwriting mode can be finished by calling
+            {@link android.inputmethodservice.InputMethodService#finishStylusHandwriting()} or will
+            be finished by framework on next
+            {@link android.inputmethodservice.InputMethodService#onFinishInput()}.
+        -->
+        <attr name="supportsStylusHandwriting" format="boolean" />
+        <!-- Specifies whether the IME supports connectionless stylus handwriting sessions. A
+             connectionless session differs from a regular session in that the IME does not use an
+             input connection to communicate with a text editor. Instead, the IME directly returns
+             recognised handwritten text via an {@link
+             android.inputmethodservice.InputMethodService} handwriting lifecycle API.
+
+             <p>If the IME supports connectionless sessions, apps or framework may start a
+             connectionless session when a stylus motion event sequence begins. {@link
+             android.inputmethodservice.InputMethodService#onStartConnectionlessStylusHandwriting}
+             is called. If the IME is ready for stylus input, it should return {code true} to start
+             the basic mode session. As in the regular session, the IME will receive stylus motion
+             events to the stylus handwriting window and should render ink to a view in this window.
+             When the user has stopped handwriting, the IME should end the session and deliver the
+             result by calling {@link
+             android.inputmethodservice.InputMethodService#finishConnectionlessStylusHandwriting}.
+
+             The default value is {code false}. If {code true}, {@link
+             android.R.attr#supportsStylusHandwriting} should also be {code true}.
+        -->
+        <attr name="supportsConnectionlessStylusHandwriting" format="boolean" />
+        <!-- Class name of an activity that allows the user to modify the stylus handwriting
+            settings for this service -->
+        <attr name="stylusHandwritingSettingsActivity" format="string" />
+
     </declare-styleable>
 
     <!-- This is the subtype of InputMethod. Subtype can describe locales (for example, en_US and
@@ -3548,6 +4113,17 @@
         <!-- The BCP-47 Language Tag of the subtype.  This replaces
         {@link android.R.styleable#InputMethod_Subtype_imeSubtypeLocale}.  -->
         <attr name="languageTag" format="string" />
+        <!-- The BCP-47 Language Tag of the preferred physical keyboard of the subtype. If it's not
+             specified, {@link android.R.styleable#InputMethod_Subtype_languageTag} will be used.
+             See also
+             {@link android.view.inputmethod.InputMethodSubtype#getPhysicalKeyboardHintLanguageTag}.
+             -->
+        <attr name="physicalKeyboardHintLanguageTag" format="string" />
+        <!-- The layout type of the preferred physical keyboard of the subtype.
+             It matches the layout type string in the keyboard layout definition. See also
+             {@link android.view.inputmethod.InputMethodSubtype#getPhysicalKeyboardHintLayoutType}.
+             -->
+        <attr name="physicalKeyboardHintLayoutType" format="string" />
     </declare-styleable>
 
     <!-- Use <code>spell-checker</code> as the root tag of the XML resource that
@@ -3733,10 +4309,18 @@
             <flag name="flagServiceHandlesDoubleTap" value="0x00000800" />
             <!-- Has flag {@link android.accessibilityservice.AccessibilityServiceInfo#FLAG_REQUEST_MULTI_FINGER_GESTURES}. -->
             <flag name="flagRequestMultiFingerGestures" value="0x00001000" />
+            <flag name="flagSendMotionEvents" value="0x0004000" />
+            <!-- Has flag {@link android.accessibilityservice.AccessibilityServiceInfo#FLAG_INPUT_METHOD_EDITOR}. -->
+            <flag name="flagInputMethodEditor" value="0x0008000" />
         </attr>
-        <!-- Component name of an activity that allows the user to modify
-             the settings for this service. This setting cannot be changed at runtime. -->
+        <!-- Fully qualified class name of an activity that allows the user to modify the settings
+             for this service. This setting cannot be changed at runtime. -->
         <attr name="settingsActivity" />
+        <!-- Fully qualified class name of {@link android.service.quicksettings.TileService} is
+             associated with this accessibility service for one to one mapping. It is used by system
+             settings to remind users this accessibility service has a
+             {@link android.service.quicksettings.TileService}. -->
+        <attr name="tileService" format="string" />
         <!-- Attribute whether the accessibility service wants to be able to retrieve the
              active window content. This setting cannot be changed at runtime.
              <p>
@@ -3784,36 +4368,55 @@
         <!-- Attribute whether the accessibility service wants to be able to take screenshot. -->
         <attr name="canTakeScreenshot" format="boolean" />
 
-        <!-- Animated image of the accessibility service purpose or behavior, to help users
-             understand how the service can help them.-->
-        <attr name="animatedImageDrawable" format="reference"/>
-        <!-- Html description of the accessibility service, to help users understand
-             how the service can help them.-->
-        <attr name="htmlDescription" format="reference"/>
+        <!-- Attribute indicating whether the accessibility service is used to assist users with
+             disabilities. This criteria might be defined by the installer. The default is false.
+             <p>
+             Note: If this flag is false, system will show a notification after a duration to
+             inform the user about the privacy implications of the service.
+             </p>
+        -->
+        <attr name="isAccessibilityTool" format="boolean" />
 
-        <!-- Short description of the accessibility service purpose or behavior.-->
+        <!-- Animated image of the accessibility service purpose or behavior, to help users
+             understand how the service can help them. -->
+        <attr name="animatedImageDrawable" format="reference"/>
+        <!-- Html description of the accessibility service usage, availability, or limitations (e.g.
+             isn't supported by all apps). -->
+        <attr name="htmlDescription" format="reference"/>
+        <!-- Description of the accessibility service usage, availability, or limitations (e.g.
+             isn't supported by all apps). -->
         <attr name="description" />
         <!-- Brief summary of the accessibility service purpose or behavior. -->
         <attr name="summary" />
+        <!-- Detailed intro of the accessibility service purpose or behavior. -->
+        <attr name="intro" format="reference" />
     </declare-styleable>
 
     <!-- Use <code>accessibility-shortcut-target</code> as the root tag of the XML resource that
          describes an activity, which is referenced from the
          <code>android.accessibilityshortcut.target</code> meta-data entry. -->
     <declare-styleable name="AccessibilityShortcutTarget">
-        <!-- Short description of the target of accessibility shortcut purpose or behavior.-->
+        <!-- Description of the target of accessibility shortcut usage, availability, or limitations
+             (e.g. isn't supported by all apps). -->
         <attr name="description" />
         <!-- Brief summary of the target of accessibility shortcut purpose or behavior. -->
         <attr name="summary" />
         <!-- Animated image of the target of accessibility shortcut purpose or behavior, to help
              users understand how the target of accessibility shortcut can help them.-->
         <attr name="animatedImageDrawable" format="reference"/>
-        <!-- Html description of the target of accessibility shortcut purpose or behavior, to help
-             users understand how the target of accessibility shortcut can help them. -->
+        <!-- Html description of the target of accessibility shortcut usage, availability, or
+             limitations (e.g. isn't supported by all apps). -->
         <attr name="htmlDescription" format="reference"/>
-        <!-- Component name of an activity that allows the user to modify the settings for this
-             target of accessibility shortcut. -->
+        <!-- Fully qualified class name of an activity that allows the user to modify the settings
+             for this target of accessibility shortcut. -->
         <attr name="settingsActivity" />
+        <!-- Fully qualified class name of {@link android.service.quicksettings.TileService} is
+             associated with this accessibility shortcut target for one to one mapping. It is used
+             by system settings to remind users this accessibility service has a
+             {@link android.service.quicksettings.TileService}. -->
+        <attr name="tileService" format="string" />
+        <!-- Detailed intro of the target of accessibility shortcut purpose or behavior. -->
+        <attr name="intro" format="reference" />
     </declare-styleable>
 
     <!-- Use <code>print-service</code> as the root tag of the XML resource that
@@ -3851,6 +4454,12 @@
         <!-- Component name of an activity that allows the user to modify
              the settings for this service. -->
         <attr name="settingsActivity"/>
+        <!-- Whether the device must be screen on before routing data to this service.
+             The default is true.-->
+        <attr name="requireDeviceScreenOn" format="boolean"/>
+        <!-- Whether the device should default to observe mode when this service is
+             default or in the foreground. -->
+        <attr name="shouldDefaultToObserveMode" format="boolean"/>
     </declare-styleable>
 
     <!-- Use <code>offhost-apdu-service</code> as the root tag of the XML resource that
@@ -3869,6 +4478,15 @@
         <attr name="settingsActivity"/>
         <!-- Secure Element which the AIDs should be routed to -->
         <attr name="secureElementName" format="string"/>
+        <!-- Whether the device must be unlocked before routing data to this service.
+             The default is false.-->
+        <attr name="requireDeviceUnlock"/>
+        <!-- Whether the device must be screen on before routing data to this service.
+             The default is false.-->
+        <attr name="requireDeviceScreenOn"/>
+        <!-- Whether the device should default to observe mode when this service is
+             default or in the foreground. -->
+        <attr name="shouldDefaultToObserveMode"/>
     </declare-styleable>
 
     <!-- Specify one or more <code>aid-group</code> elements inside a
@@ -3901,6 +4519,34 @@
     <declare-styleable name="AidPrefixFilter">
         <!-- The ISO7816 Application ID. This attribute is mandatory. -->
         <attr name="name" />
+    </declare-styleable>
+
+    <!-- Specify one or more <code>polling-loop-filter</code> elements inside a
+         <code>host-apdu-service</code> or <code>offhost-apdu-service</code> to indicate polling
+         loop frames that your service can handle. -->
+    <!-- @FlaggedApi("android.nfc.nfc_read_polling_loop") -->
+    <declare-styleable name="PollingLoopFilter">
+        <!-- The polling loop frame. This attribute is mandatory. -->
+        <attr name="name" />
+        <!-- Whether or not the system should automatically start a transaction when this polling
+         loop filter matches. If not set, default value is false. -->
+        <!-- @FlaggedApi("android.nfc.nfc_read_polling_loop") -->
+        <attr name="autoTransact" format="boolean"/>
+    </declare-styleable>
+
+    <!-- Specify one or more <code>polling-loop-pattern-filter</code> elements inside a
+         <code>host-apdu-service</code> or <code>offhost-apdu-service</code>  to indicate polling
+         loop frames that your service can handle. -->
+    <!-- @FlaggedApi("android.nfc.nfc_read_polling_loop") -->
+    <declare-styleable name="PollingLoopPatternFilter">
+        <!-- The patter to match polling loop frames to, must to be compatible with
+         {@link java.util.regex.Pattern#compile(String)} and only contain hexadecimal numbers and
+         `.`, `?` and `*` operators. This attribute is mandatory. -->
+        <attr name="name" />
+        <!-- Whether or not the system should automatically start a transaction when this polling
+         loop filter matches. If not set, default value is false. -->
+        <!-- @FlaggedApi("android.nfc.nfc_read_polling_loop") -->
+        <attr name="autoTransact" format="boolean"/>
     </declare-styleable>
 
     <!-- Use <code>host-nfcf-service</code> as the root tag of the XML resource that
@@ -4032,6 +4678,101 @@
         <attr name="dial" format="reference"/>
         <attr name="hand_hour" format="reference"/>
         <attr name="hand_minute" format="reference"/>
+        <attr name="hand_second" format="reference"/>
+        <!-- Specifies the time zone to use. When this attribute is specified, the
+             TextClock will ignore the time zone of the system. To use the user's
+             time zone, do not specify this attribute. The default value is the
+             user's time zone. Please refer to {@link java.util.TimeZone} for more
+             information about time zone ids. -->
+        <attr name="timeZone" format="string"/>
+        <!-- Tint to apply to the dial graphic. -->
+        <attr name="dialTint" format="color" />
+        <!-- Blending mode used to apply the dial graphic tint. -->
+        <attr name="dialTintMode">
+            <!-- The tint is drawn on top of the drawable.
+                 [Sa + (1 - Sa)*Da, Rc = Sc + (1 - Sa)*Dc] -->
+            <enum name="src_over" value="3" />
+            <!-- The tint is masked by the alpha channel of the drawable. The drawable’s
+                 color channels are thrown out. [Sa * Da, Sc * Da] -->
+            <enum name="src_in" value="5" />
+            <!-- The tint is drawn above the drawable, but with the drawable’s alpha
+                 channel masking the result. [Da, Sc * Da + (1 - Sa) * Dc] -->
+            <enum name="src_atop" value="9" />
+            <!-- Multiplies the color and alpha channels of the drawable with those of
+                 the tint. [Sa * Da, Sc * Dc] -->
+            <enum name="multiply" value="14" />
+            <!-- [Sa + Da - Sa * Da, Sc + Dc - Sc * Dc] -->
+            <enum name="screen" value="15" />
+            <!-- Combines the tint and drawable color and alpha channels, clamping the
+                 result to valid color values. Saturate(S + D) -->
+            <enum name="add" value="16" />
+        </attr>
+        <!-- Tint to apply to the hour hand graphic. -->
+        <attr name="hand_hourTint" format="color" />
+        <!-- Blending mode used to apply the hour hand graphic tint. -->
+        <attr name="hand_hourTintMode">
+            <!-- The tint is drawn on top of the drawable.
+                 [Sa + (1 - Sa)*Da, Rc = Sc + (1 - Sa)*Dc] -->
+            <enum name="src_over" value="3" />
+            <!-- The tint is masked by the alpha channel of the drawable. The drawable’s
+                 color channels are thrown out. [Sa * Da, Sc * Da] -->
+            <enum name="src_in" value="5" />
+            <!-- The tint is drawn above the drawable, but with the drawable’s alpha
+                 channel masking the result. [Da, Sc * Da + (1 - Sa) * Dc] -->
+            <enum name="src_atop" value="9" />
+            <!-- Multiplies the color and alpha channels of the drawable with those of
+                 the tint. [Sa * Da, Sc * Dc] -->
+            <enum name="multiply" value="14" />
+            <!-- [Sa + Da - Sa * Da, Sc + Dc - Sc * Dc] -->
+            <enum name="screen" value="15" />
+            <!-- Combines the tint and drawable color and alpha channels, clamping the
+                 result to valid color values. Saturate(S + D) -->
+            <enum name="add" value="16" />
+        </attr>
+        <!-- Tint to apply to the minute hand graphic. -->
+        <attr name="hand_minuteTint" format="color" />
+        <!-- Blending mode used to apply the minute hand graphic tint. -->
+        <attr name="hand_minuteTintMode">
+            <!-- The tint is drawn on top of the drawable.
+                 [Sa + (1 - Sa)*Da, Rc = Sc + (1 - Sa)*Dc] -->
+            <enum name="src_over" value="3" />
+            <!-- The tint is masked by the alpha channel of the drawable. The drawable’s
+                 color channels are thrown out. [Sa * Da, Sc * Da] -->
+            <enum name="src_in" value="5" />
+            <!-- The tint is drawn above the drawable, but with the drawable’s alpha
+                 channel masking the result. [Da, Sc * Da + (1 - Sa) * Dc] -->
+            <enum name="src_atop" value="9" />
+            <!-- Multiplies the color and alpha channels of the drawable with those of
+                 the tint. [Sa * Da, Sc * Dc] -->
+            <enum name="multiply" value="14" />
+            <!-- [Sa + Da - Sa * Da, Sc + Dc - Sc * Dc] -->
+            <enum name="screen" value="15" />
+            <!-- Combines the tint and drawable color and alpha channels, clamping the
+                 result to valid color values. Saturate(S + D) -->
+            <enum name="add" value="16" />
+        </attr>
+        <!-- Tint to apply to the second hand graphic. -->
+        <attr name="hand_secondTint" format="color" />
+        <!-- Blending mode used to apply the second hand graphic tint. -->
+        <attr name="hand_secondTintMode">
+            <!-- The tint is drawn on top of the drawable.
+                 [Sa + (1 - Sa)*Da, Rc = Sc + (1 - Sa)*Dc] -->
+            <enum name="src_over" value="3" />
+            <!-- The tint is masked by the alpha channel of the drawable. The drawable’s
+                 color channels are thrown out. [Sa * Da, Sc * Da] -->
+            <enum name="src_in" value="5" />
+            <!-- The tint is drawn above the drawable, but with the drawable’s alpha
+                 channel masking the result. [Da, Sc * Da + (1 - Sa) * Dc] -->
+            <enum name="src_atop" value="9" />
+            <!-- Multiplies the color and alpha channels of the drawable with those of
+                 the tint. [Sa * Da, Sc * Dc] -->
+            <enum name="multiply" value="14" />
+            <!-- [Sa + Da - Sa * Da, Sc + Dc - Sc * Dc] -->
+            <enum name="screen" value="15" />
+            <!-- Combines the tint and drawable color and alpha channels, clamping the
+                 result to valid color values. Saturate(S + D) -->
+            <enum name="add" value="16" />
+        </attr>
     </declare-styleable>
     <declare-styleable name="Button">
     </declare-styleable>
@@ -4114,6 +4855,8 @@
         </attr>
     </declare-styleable>
     <declare-styleable name="EditText">
+        <!-- Enables styling shortcuts, e.g. Ctrl+B for bold. This is off by default.  -->
+        <attr name="enableTextStylingShortcuts" format="boolean" />
     </declare-styleable>
     <declare-styleable name="FastScroll">
         <!-- Drawable used for the scroll bar thumb. -->
@@ -4726,6 +5469,15 @@
         <attr name="textLocale" format="string" />
         <!-- Color of the text selection highlight. -->
         <attr name="textColorHighlight" />
+        <!-- Color of search results highlight.
+             This color is typically used when TextView/EditText shows search result in-app text
+             search invoked with Ctrl+F. -->
+        <attr name="searchResultHighlightColor" format="color" />
+        <!-- Color of focused search result highlight.
+             This color is typically used when TextView/EditText shows search result in-app text
+             search invoked with Ctrl+F. -->
+        <attr name="focusedSearchResultHighlightColor" format="color" />
+
         <!-- Color of the hint text. -->
         <attr name="textColorHint" />
         <!-- Color of the links. -->
@@ -4756,6 +5508,10 @@
         <attr name="fontFeatureSettings" format="string" />
         <!-- Font variation settings. -->
         <attr name="fontVariationSettings" format="string"/>
+        <!-- Specifies the strictness of line-breaking rules applied within an element. -->
+        <attr name="lineBreakStyle" />
+        <!-- Specifies the phrase-based breaking opportunities. -->
+        <attr name="lineBreakWordStyle" />
     </declare-styleable>
     <declare-styleable name="TextClock">
         <!-- Specifies the formatting pattern used to show the time and/or date
@@ -4799,6 +5555,14 @@
         <attr name="textColor" />
         <!-- Color of the text selection highlight. -->
         <attr name="textColorHighlight" />
+        <!-- Color of search results highlight.
+             This color is typically used when TextView/EditText shows search result in-app text
+             search invoked with Ctrl+F. -->
+        <attr name="searchResultHighlightColor" format="color" />
+        <!-- Color of focused search result highlight.
+             This color is typically used when TextView/EditText shows search result in-app text
+             search invoked with Ctrl+F. -->
+        <attr name="focusedSearchResultHighlightColor" format="color" />
         <!-- Color of the hint text. -->
         <attr name="textColorHint" />
         <!-- Base text color, typeface, size, and style. -->
@@ -5132,6 +5896,34 @@
             <!-- Standard amount of hyphenation, useful for running text and for
             screens with limited space for text. -->
             <enum name="full" value="2" />
+
+            <!-- Same to hyphenationFrequency="normal" but using faster algorithm for measuring
+            hyphenation break points. To make text rendering faster with hyphenation, this algorithm
+             ignores some hyphen character related typographic features, e.g. kerning. -->
+            <enum name="normalFast" value="3" />
+
+            <!-- Same to hyphenationFrequency="full" but using faster algorithm for measuring
+            hyphenation break points. To make text rendering faster with hyphenation, this algorithm
+             ignores some hyphen character related typographic features, e.g. kerning. -->
+            <enum name="fullFast" value="4" />
+        </attr>
+        <!-- Specifies the line-break strategies for text wrapping. -->
+        <attr name="lineBreakStyle">
+            <!-- No line-break rules are used for line breaking. -->
+            <enum name="none" value="0" />
+            <!-- The least restrictive line-break rules are used for line breaking. -->
+            <enum name="loose" value="1" />
+            <!-- The most common line-break rules are used for line breaking. -->
+            <enum name="normal" value="2" />
+            <!-- The most strict line-break rules are used for line breaking. -->
+            <enum name="strict" value="3" />
+        </attr>
+        <!-- Specifies the line-break word strategies for text wrapping.-->
+        <attr name="lineBreakWordStyle">
+            <!-- No line-break word style is used for line breaking. -->
+            <enum name="none" value="0" />
+            <!-- Line breaking is based on phrases, which results in text wrapping only on meaningful words. -->
+            <enum name="phrase" value="1" />
         </attr>
         <!-- Specify the type of auto-size. Note that this feature is not supported by EditText,
         works only for TextView. -->
@@ -5160,7 +5952,45 @@
             <enum name="none" value="0" />
             <!-- Justification by stretching word spacing. -->
             <enum name="inter_word" value = "1" />
+            <!-- Justification by stretching letter spacing. -->
+            <!-- @FlaggedApi("com.android.text.flags.inter_character_justification") -->
+            <enum name="inter_character" value = "2" />
         </attr>
+        <!-- Whether to use width of bounding box as a source of automatic line breaking and
+          drawing.
+          If this value is false, the TextView determines the View width, drawing offset and
+          automatic line breaking based on total advances as text widths. By setting true,
+          use glyph bound's as a source of text width.  -->
+        <!-- @FlaggedApi("com.android.text.flags.use_bounds_for_width") -->
+        <attr name="useBoundsForWidth" format="boolean" />
+
+
+        <!-- Whether to shift the drawing offset for prevent clipping start drawing offset.
+          This value is ignored when the useBoundsForWidth attribute is false.
+
+          If this value is false, the TextView draws text from the zero X coordinate. This is
+          useful for aligning multiple TextViews vertically.
+          If this value is true, the TextView shift the drawing offset not to clip the
+          stroke in the region where the X coordinate is negative. -->
+        <!-- @FlaggedApi("com.android.text.flags.use_bounds_for_width") -->
+        <attr name="shiftDrawingOffsetForStartOverhang" format="boolean" />
+        <!-- Whether to use the locale preferred line height for the minimum line height.
+
+          This flag is useful for preventing jitter of entering letters into empty EditText.
+          The line height of the text is determined by the font files used for drawing text in a
+          line. However, in case of the empty text case, the line height cannot be determined and
+          the default line height: usually it is came from a font of Latin script. By making this
+          attribute to true, the TextView/EditText uses a line height that is likely used for the
+          locale associated with the widget. For example, if the system locale is Japanese, the
+          height of the EditText will be adjusted to meet the height of the Japanese font even if
+          the text is empty.
+
+          The default value for EditText is true if targetSdkVersion is
+          {@link android.os.Build.VERSION_CODE#VANILLA_ICE_CREAM} or later, otherwise false.
+          For other TextViews, the default value is false.
+        -->
+        <!-- @FlaggedApi("com.android.text.flags.fix_line_height_for_locale") -->
+        <attr name="useLocalePreferredLineHeightForMinimum" format="boolean" />
     </declare-styleable>
     <declare-styleable name="TextViewAppearance">
         <!-- Base text color, typeface, size, and style. -->
@@ -5873,6 +6703,8 @@
         <attr name="color" />
         <!-- Alpha multiplier applied to the base color. -->
         <attr name="alpha" />
+        <!-- Perceptual luminance applied to the base color. From 0 to 100. -->
+        <attr name="lStar" format="float" />
     </declare-styleable>
 
     <!-- Drawable used to render according to the animation scale. Esp. when it is 0 due to battery
@@ -6181,7 +7013,7 @@
              edges of a bitmap when rotated. Default value is false. -->
         <attr name="antialias" format="boolean" />
         <!-- Enables or disables bitmap filtering. Filtering is used when the bitmap is
-             shrunk or stretched to smooth its apperance. Default value is true. -->
+             shrunk or stretched to smooth its appearance. Default value is true. -->
         <attr name="filter" format="boolean" />
         <!-- Enables or disables dithering of the bitmap if the bitmap does not have the
              same pixel configuration as the screen (for instance: a ARGB 8888 bitmap with
@@ -6304,6 +7136,8 @@
         <!-- The radius of the ripple when fully expanded. By default, the
              radius is computed based on the size of the ripple's container. -->
         <attr name="radius" />
+        <!-- Secondary color of the ripple effect. -->
+        <attr name="effectColor" />
     </declare-styleable>
 
     <declare-styleable name="ScaleDrawable">
@@ -6596,6 +7430,13 @@
         <!-- Special option for window animations: whether window should have rounded corners.
              @see ScreenDecorationsUtils#getWindowCornerRadius(Resources) -->
         <attr name="hasRoundedCorners" format="boolean" />
+        <!-- Special option for window animations: whether to show a background behind the animating
+             windows. By default the window's background is used unless overridden by the
+             animation. -->
+        <attr name="showBackdrop" format="boolean" />
+        <!-- Special option for window animations: whether the window's background should be used as
+             a background to the animation. -->
+        <attr name="backdropColor" format="color" />
     </declare-styleable>
 
     <declare-styleable name="AnimationSet">
@@ -6624,10 +7465,10 @@
     </declare-styleable>
 
     <declare-styleable name="TranslateAnimation">
-        <attr name="fromXDelta" format="float|fraction" />
-        <attr name="toXDelta" format="float|fraction" />
-        <attr name="fromYDelta" format="float|fraction" />
-        <attr name="toYDelta" format="float|fraction" />
+        <attr name="fromXDelta" format="float|fraction|dimension" />
+        <attr name="toXDelta" format="float|fraction|dimension" />
+        <attr name="fromYDelta" format="float|fraction|dimension" />
+        <attr name="toYDelta" format="float|fraction|dimension" />
     </declare-styleable>
 
     <declare-styleable name="AlphaAnimation">
@@ -6644,6 +7485,46 @@
         <attr name="toTop" format="fraction" />
         <attr name="toRight" format="fraction" />
         <attr name="toBottom" format="fraction" />
+    </declare-styleable>
+
+    <!-- Defines the ExtendAnimation used to extend windows during animations -->
+    <declare-styleable name="ExtendAnimation">
+        <!-- Defines the amount a window should be extended outward from the left at the start of
+             the animation in an absolute dimension (interpreted as pixels if no dimension unit is
+             provided) or as a percentage of the animation target's width. -->
+        <attr name="fromExtendLeft" format="float|fraction|dimension" />
+        <!-- Defines the amount a window should be extended outward from the top at the start of
+             the animation in an absolute dimension (interpreted as pixels if no dimension unit is
+             provided) or as a percentage of the animation target's height. -->
+        <attr name="fromExtendTop" format="float|fraction|dimension" />
+        <!-- Defines the amount a window should be extended outward from the right at the start of
+             the animation in an absolute dimension (interpreted as pixels if no dimension unit is
+             provided) or as a percentage of the animation target's width. -->
+        <attr name="fromExtendRight" format="float|fraction|dimension" />
+        <!-- Defines the amount a window should be extended outward from the bottom at the start of
+             the animation in an absolute dimension (interpreted as pixels if no dimension unit is
+             provided) or as a percentage of the animation target's height. -->
+        <attr name="fromExtendBottom" format="float|fraction|dimension" />
+        <!-- Defines the amount a window should be extended outward from the left by the end of the
+             animation by transitioning from the fromExtendLeft amount in an absolute dimension
+             (interpreted as pixels if no dimension unit is provided) or as a percentage of the
+             animation target's width. -->
+        <attr name="toExtendLeft" format="float|fraction|dimension" />
+        <!-- Defines the amount a window should be extended outward from the top by the end of the
+             animation by transitioning from the fromExtendTop amount in an absolute dimension
+             (interpreted as pixels if no dimension unit is provided) or as a percentage of the
+             animation target's height. -->
+        <attr name="toExtendTop" format="float|fraction|dimension" />
+        <!-- Defines the amount a window should be extended outward from the right by the end of
+             the animation by transitioning from the fromExtendRight amount in an absolute
+             dimension (interpreted as pixels if no dimension unit is provided) or as a percentage
+             of the animation target's width. -->
+        <attr name="toExtendRight" format="float|fraction|dimension" />
+        <!-- Defines the amount a window should be extended outward from the bottom by the end of
+             the animation by transitioning from the fromExtendBottom amount in an absolute
+             dimension (interpreted as pixels if no dimension unit is provided) or as a percentage
+             of the animation target's height. -->
+        <attr name="toExtendBottom" format="float|fraction|dimension" />
     </declare-styleable>
 
     <declare-styleable name="LayoutAnimation">
@@ -7497,7 +8378,11 @@
         <attr name="enabled" />
 
         <!-- Name of a method on the Context used to inflate the menu that will be
-             called when the item is clicked. -->
+             called when the item is clicked.
+             {@deprecated Menu actually traverses the Context hierarchy looking for the
+             relevant method, which is fragile (an intermediate ContextWrapper adding a
+             same-named method would change behavior) and restricts bytecode optimizers
+             such as R8. Instead, use MenuItem.setOnMenuItemClickListener.} -->
         <attr name="onClick" />
 
         <!-- How this item should display in the Action Bar, if present. -->
@@ -7914,6 +8799,14 @@
         <attr name="minResizeWidth" format="dimension"/>
         <!-- Minimum height that the AppWidget can be resized to. -->
         <attr name="minResizeHeight" format="dimension"/>
+        <!-- Maximum width that the AppWidget can be resized to. -->
+        <attr name="maxResizeWidth" format="dimension"/>
+        <!-- Maximum height that the AppWidget can be resized to. -->
+        <attr name="maxResizeHeight" format="dimension"/>
+        <!-- Default width of the AppWidget in units of launcher grid cells. -->
+        <attr name="targetCellWidth" format="integer"/>
+        <!-- Default height of the AppWidget in units of launcher grid cells. -->
+        <attr name="targetCellHeight" format="integer"/>
         <!-- Update period in milliseconds, or 0 if the AppWidget will update itself. -->
         <attr name="updatePeriodMillis" format="integer" />
         <!-- A resource id of a layout. -->
@@ -7923,9 +8816,17 @@
         <!-- A class name in the AppWidget's package to be launched to configure.
              If not supplied, then no activity will be launched. -->
         <attr name="configure" format="string" />
-        <!-- A preview of what the AppWidget will look like after it's configured.
-              If not supplied, the AppWidget's icon will be used. -->
+        <!-- A preview, in a drawable resource id, of what the AppWidget will look like after it's
+             configured.
+             If not supplied, the AppWidget's icon will be used. -->
         <attr name="previewImage" format="reference" />
+        <!-- The layout resource id of a preview of what the AppWidget will look like after it's
+             configured.
+             Unlike previewImage, previewLayout can better showcase AppWidget in different locales,
+             system themes, display sizes & density etc.
+             If supplied, this will take precedence over the previewImage on supported widget hosts.
+             Otherwise, previewImage will be used. -->
+        <attr name="previewLayout" format="reference" />
         <!-- The view id of the AppWidget subview which should be auto-advanced.
              by the widget's host. -->
         <attr name="autoAdvanceViewId" format="reference" />
@@ -7952,7 +8853,12 @@
             <!-- The widget is added directly by the app, and does not need to appear in
                  the global list of available widgets -->
             <flag name="hide_from_picker" value="0x2" />
+              <!-- The widget provides a default configuration. The host may decide not to launch
+                   the provided configuration activity. -->
+           <flag name="configuration_optional" value="0x4" />
         </attr>
+        <!-- A resource identifier for a string containing a short description of the widget. -->
+        <attr name="description" />
     </declare-styleable>
 
     <!-- =============================== -->
@@ -8107,6 +9013,19 @@
              @hide @SystemApi -->
         <attr name="supportsAmbientMode" format="boolean" />
 
+        <!-- Indicates that this wallpaper service should receive zoom transition updates when
+             changing the structural state of the device (e.g. when folding or unfolding
+             a foldable device). When this value is set to true
+             {@link android.service.wallpaper.WallpaperService.Engine} could receive zoom updates
+             before or after changing the device state. Wallpapers receive zoom updates using
+             {@link android.service.wallpaper.WallpaperService.Engine#onZoomChanged(float)} and
+             zoom rendering should be handled manually. Zoom updates are delivered only when
+             {@link android.service.wallpaper.WallpaperService.Engine} is created and not destroyed.
+             Default value is true.
+             Corresponds to
+             {@link android.app.WallpaperInfo#shouldUseDefaultUnfoldTransition()} -->
+        <attr name="shouldUseDefaultUnfoldTransition" format="boolean" />
+
         <!-- Uri that specifies a settings Slice for this wallpaper. -->
         <attr name="settingsSliceUri" format="string"/>
 
@@ -8129,6 +9048,19 @@
         <!-- Component name of an activity that allows the user to modify
              the settings for this dream. -->
         <attr name="settingsActivity" />
+        <!-- A preview, in a drawable resource id, of what the Dream will look like. -->
+        <attr name="previewImage" format="reference" />
+        <!-- Whether to show clock and other complications such as weather in the overlay. Default
+             to true. Note that the overlay on dreams is currently only supported on tablets. -->
+        <attr name="showClockAndComplications" format="boolean" />
+
+        <!-- Dream Category to determine the type of dream. Default to default.
+        @hide -->
+        <attr name="dreamCategory" format="integer">
+            <flag name="none" value="0x0" />
+            <flag name="low_light" value="0x1" />
+            <flag name="home_panel" value="0x2" />
+        </attr>
     </declare-styleable>
 
     <!--  Use <code>trust-agent</code> as the root tag of the XML resource that
@@ -8219,6 +9151,9 @@
         <!-- Fully qualified class name of an activity that allows the user to modify
              the settings for this service. -->
         <attr name="settingsActivity" />
+        <!-- Fully qualified class name of an activity that allows the user to view any passwords
+             saved by this service. -->
+        <attr name="passwordsActivity" format="string" />
 
         <!-- Specifies whether the AutofillService supports inline suggestions-->
         <attr name="supportsInlineSuggestions" format="boolean" />
@@ -8242,6 +9177,23 @@
     </declare-styleable>
 
     <!-- =============================== -->
+    <!-- System Speech Recognition attributes -->
+    <!-- =============================== -->
+    <eat-comment />
+
+    <!-- Use <code>on-device-recognition-service</code> as the root tag of the XML resource that
+         describes a {@link android.service.speech.RecognitionService}, which is referenced
+         from its {@link android.service.speech.RecognitionService#SERVICE_META_DATA} meta-data
+         entry.
+         @hide @SystemApi
+    -->
+    <declare-styleable name="OnDeviceRecognitionService">
+        <!-- Fully qualified class name of an activity that allows the user to modify
+             the settings for this service. -->
+        <attr name="settingsActivity" />
+    </declare-styleable>
+
+    <!-- =============================== -->
     <!-- Content Capture attributes -->
     <!-- =============================== -->
     <eat-comment />
@@ -8253,6 +9205,23 @@
          @hide @SystemApi
     -->
     <declare-styleable name="ContentCaptureService">
+        <!-- Fully qualified class name of an activity that allows the user to modify
+             the settings for this service. -->
+        <attr name="settingsActivity" />
+    </declare-styleable>
+
+    <!-- =============================== -->
+    <!-- Translation attributes -->
+    <!-- =============================== -->
+    <eat-comment />
+
+    <!-- Use <code>translation-service</code> as the root tag of the XML resource that describes
+         a {@link android.service.translation.TranslationService}, which is referenced from
+         its {@link android.service.translation.TranslationService#SERVICE_META_DATA} meta-data
+         entry.
+         @hide @SystemApi
+    -->
+    <declare-styleable name="TranslationService">
         <!-- Fully qualified class name of an activity that allows the user to modify
              the settings for this service. -->
         <attr name="settingsActivity" />
@@ -8355,6 +9324,14 @@
         <attr name="errorColor" format="color|reference" />
         <!-- The success color -->
         <attr name="successColor" format="color|reference"/>
+        <!-- The dot color -->
+        <attr name="dotColor" format="color|reference"/>
+        <!-- Color of the dot when it's activated -->
+        <attr name="dotActivatedColor" format="color|reference"/>
+        <!-- Keep dot in activated state until segment completion -->
+        <attr name="keepDotActivated" format="boolean"/>
+        <!-- Enlarge vertex entry area for some form factors -->
+        <attr name="enlargeVertexEntryArea" format="boolean"/>
     </declare-styleable>
 
     <!-- =============================== -->
@@ -8379,7 +9356,6 @@
         <attr name="shortcutLongLabel"/>
         <!-- Text shown on the button that takes users to the wallet application -->
         <attr name="shortcutShortLabel"/>
-
     </declare-styleable>
 
     <!-- Use <code>recognition-service</code> as the root tag of the XML resource that
@@ -8388,6 +9364,9 @@
          Described here are the attributes that can be included in that tag. -->
     <declare-styleable name="RecognitionService">
         <attr name="settingsActivity" />
+        <!-- Flag indicating whether a recognition service can be selected as default. The default
+             value of this flag is true. -->
+        <attr name="selectableAsDefault" format="boolean" />
     </declare-styleable>
 
     <!-- Use <code>voice-interaction-service</code> as the root tag of the XML resource that
@@ -8397,9 +9376,14 @@
     <declare-styleable name="VoiceInteractionService">
         <!-- The service that hosts active voice interaction sessions.  This is required. -->
         <attr name="sessionService" format="string" />
-        <!-- The service that provides voice recognition.  This is required.  When the user
-             selects this voice interaction service, they will also be implicitly selecting
-             the component here for their recognition service. -->
+        <!-- The service that provides voice recognition. This is required. On Android 11 and
+             earlier, this must be a valid RecognitionService.
+             <p>
+             From Android 12 onward, this attribute does nothing. However, we still require it to
+             be set to something to reduce the risk that an app with an unspecified value gets
+             pushed to older platform versions, where it will cause a boot loop. To make sure
+             developers don't miss it, the system will reset the current assistant if this isn't
+             specified.-->
         <attr name="recognitionService" format="string" />
         <attr name="settingsActivity" />
         <!-- Flag indicating whether this voice interaction service is capable of handling the
@@ -8412,6 +9396,37 @@
              interaction requests from an Activity. This flag is new in
              {@link android.os.Build.VERSION_CODES#N} and not used in previous versions. -->
         <attr name="supportsLocalInteraction" format="boolean" />
+        <!-- The service that provides {@link android.service.voice.HotwordDetectionService}.
+             Expect a component name to be provided. @hide @SystemApi -->
+        <attr name="hotwordDetectionService" format="string" />
+        <!-- The service that provides {@link android.service.voice.VisualQueryDetectionService}.
+             Expect a component name to be provided. @hide @SystemApi -->
+        <attr name="visualQueryDetectionService" format="string" />
+
+    </declare-styleable>
+
+    <!-- Use <code>game-service</code> as the root tag of the XML resource that
+         describes a GameService.
+         Described here are the attributes that can be included in that tag. -->
+    <declare-styleable name="GameService">
+        <!-- The service that hosts active game sessions.  This is required. -->
+        <attr name="gameSessionService" format="string" />
+    </declare-styleable>
+
+    <!-- Use <code>game-mode-config</code> as the root tag of the XML resource that
+         describes a GameModeConfig.
+         Described here are the attributes that can be included in that tag. -->
+    <declare-styleable name="GameModeConfig">
+        <!-- Set true to opt in BATTERY mode. -->
+        <attr name="supportsBatteryGameMode" format="boolean" />
+        <!-- Set true to opt in PERFORMANCE mode. -->
+        <attr name="supportsPerformanceGameMode" format="boolean" />
+        <!-- Set true to enable ANGLE. -->
+        <attr name="allowGameAngleDriver" format="boolean" />
+        <!-- Set true to allow resolution downscaling intervention. -->
+        <attr name="allowGameDownscaling" format="boolean" />
+        <!-- Set true to allow FPS override intervention. -->
+        <attr name="allowGameFpsOverride" format="boolean" />
     </declare-styleable>
 
     <!-- Use <code>voice-enrollment-application</code>
@@ -8672,6 +9687,8 @@
         <attr name="pointerIconGrab" format="reference"/>
         <!-- Reference to a pointer drawable with STYLE_GRABBING. -->
         <attr name="pointerIconGrabbing" format="reference"/>
+        <!-- Reference to a pointer drawable with HANDWRITING. -->
+        <attr name="pointerIconHandwriting" format="reference"/>
     </declare-styleable>
 
     <declare-styleable name="PointerIcon">
@@ -8787,8 +9804,34 @@
         <attr name="label" />
         <!-- The key character map file resource. -->
         <attr name="keyboardLayout" format="reference" />
-        <!-- The locales the given keyboard layout corresponds to. -->
-        <attr name="locale" format="string" />
+        <!-- The locales the given keyboard layout corresponds to. This is a list of
+             BCP-47 conformant language tags separated by the delimiter ',' or '|'.
+             Some examples of language tags are: en-US, zh-Hans-CN, el-Grek-polyton.
+             It includes information for language code, country code, variant, and script
+             code like ‘Latn’, ‘Cyrl’, etc. -->
+        <attr name="keyboardLocale" format="string"/>
+        <!-- The layout type of the given keyboardLayout.
+             NOTE: The enum to int value mapping must remain stable -->
+        <attr name="keyboardLayoutType" format="enum">
+            <!-- Qwerty-based keyboard layout. -->
+            <enum name="qwerty" value="1" />
+            <!-- Qwertz-based keyboard layout. -->
+            <enum name="qwertz" value="2" />
+            <!-- Azerty-based keyboard layout. -->
+            <enum name="azerty" value="3" />
+            <!-- Dvorak keyboard layout. -->
+            <enum name="dvorak" value="4" />
+            <!-- Colemak keyboard layout. -->
+            <enum name="colemak" value="5" />
+            <!-- Workman keyboard layout. -->
+            <enum name="workman" value="6" />
+            <!-- Turkish-Q keyboard layout. -->
+            <enum name="turkish_q" value="7" />
+            <!-- Turkish-F keyboard layout. -->
+            <enum name="turkish_f" value="8" />
+            <!-- Keyboard layout that has been enhanced with a large number of extra characters. -->
+            <enum name="extended" value="9" />
+        </attr>
         <!-- The vendor ID of the hardware the given layout corresponds to. @hide -->
         <attr name="vendorId" format="integer" />
         <!-- The product ID of the hardware the given layout corresponds to. @hide -->
@@ -8963,7 +10006,36 @@
              changed at runtime by calling
              {@link android.media.tv.TvInputManager#updateTvInputInfo(android.media.tv.TvInputInfo)}. -->
         <attr name="tunerCount" format="integer" />
+        <!-- Attribute whether the TV input service can pause recording programs.
+             This value can be changed at runtime by calling
+             {@link android.media.tv.TvInputManager#updateTvInputInfo(android.media.tv.TvInputInfo)}
+             . -->
+        <attr name="canPauseRecording" format="boolean" />
     </declare-styleable>
+
+    <!-- Use <code>tv-interactive-app</code> as the root tag of the XML resource that describes a
+         {@link android.media.tv.interactive.TvInteractiveAppService}, which is referenced
+         from its
+         {@link android.media.tv.interactive.TvInteractiveAppService#SERVICE_META_DATA}
+         meta-data entry. Described here are the attributes that can be included in that tag. -->
+    <declare-styleable name="TvInteractiveAppService">
+        <!-- The interactive app types that the TV interactive app service supports.
+             Reference to a string array resource that describes the supported types,
+             e.g. HbbTv, Ginga. -->
+        <attr name="supportedTypes" format="reference" />
+    </declare-styleable>
+
+    <!-- Use <code>tv-ad-service</code> as the root tag of the XML resource that describes a
+         android.media.tv.ad.TvAdService, which is referenced from its
+         android.media.tv.ad.TvAdService#SERVICE_META_DATA meta-data entry. Described here
+         are the attributes that can be included in that tag. -->
+    <declare-styleable name="TvAdService">
+        <!-- The advertisement types that the TV ad service supports.
+             Reference to a string array resource that describes the supported types,
+             e.g. linear, overlay. -->
+        <attr name="adServiceTypes" format="reference" />
+    </declare-styleable>
+
 
     <!-- Attributes that can be used with <code>rating-system-definition</code> tags inside of the
          XML resource that describes TV content rating of a {@link android.media.tv.TvInputService},
@@ -9003,6 +10075,12 @@
         <attr name="maxCollapsedHeightSmall" format="dimension" />
         <!-- Whether the Drawer should be positioned at the top rather than at the bottom. -->
         <attr name="showAtTop" format="boolean" />
+        <!-- By default `ResolverDrawerLayout`’s children views with `layout_ignoreOffset` property
+             set to true have a fixed position in the layout that won’t be affected by the drawer’s
+             movements. This property alternates that behavior. It specifies a child view’s id that
+             will push all ignoreOffset siblings below it when the drawer is moved i.e. setting the
+             top limit the ignoreOffset elements. -->
+        <attr name="ignoreOffsetTopLimit" format="reference" />
     </declare-styleable>
 
     <declare-styleable name="MessagingLinearLayout">
@@ -9108,6 +10186,9 @@
         <!-- @hide From Theme.colorBackground, used for the TaskDescription background
                    color. -->
         <attr name="colorBackground" />
+        <!-- @hide From Theme.colorBackgroundFloating, used for the TaskDescription background
+                   color floating. -->
+        <attr name="colorBackgroundFloating" />
         <!-- @hide From Theme.statusBarColor, used for the TaskDescription status bar color. -->
         <attr name="statusBarColor"/>
         <!-- @hide From Theme.navigationBarColor, used for the TaskDescription navigation bar
@@ -9126,6 +10207,7 @@
         <attr name="shortcutShortLabel" format="reference" />
         <attr name="shortcutLongLabel" format="reference" />
         <attr name="shortcutDisabledMessage" format="reference" />
+        <attr name="splashScreenTheme" format="reference"/>
     </declare-styleable>
 
     <declare-styleable name="ShortcutCategories">
@@ -9164,22 +10246,39 @@
         <attr name="fontVariationSettings" format="string" />
     </declare-styleable>
 
-    <!-- Attributes that are read when parsing a &lt;fontfamily&gt; tag. -->
+    <!-- Attributes that are read when parsing a &lt;fontfamily&gt; tag.
+         {@deprecated Use Jetpack Core library instead.}
+     -->
     <declare-styleable name="FontFamily">
-        <!-- The authority of the Font Provider to be used for the request. -->
+        <!-- The authority of the Font Provider to be used for the request.
+             {@deprecated Use app:fontProviderAuthority with Jetpack Core library instead for
+              consistent behavior across all devices.}
+         -->
         <attr name="fontProviderAuthority" format="string" />
         <!-- The package for the Font Provider to be used for the request. This is used to verify
-        the identity of the provider. -->
+        the identity of the provider.
+             {@deprecated Use app:fontProviderPackage with Jetpack Core library instead.}
+         -->
         <attr name="fontProviderPackage" format="string" />
         <!-- The query to be sent over to the provider. Refer to your font provider's documentation
-        on the format of this string. -->
+        on the format of this string.
+             {@deprecated Use app:fontProviderQuery with Jetpack Core library instead.}
+         -->
         <attr name="fontProviderQuery" format="string" />
         <!-- The sets of hashes for the certificates the provider should be signed with. This is
         used to verify the identity of the provider, and is only required if the provider is not
         part of the system image. This value may point to one list or a list of lists, where each
         individual list represents one collection of signature hashes. Refer to your font provider's
-        documentation for these values. -->
+        documentation for these values.
+             {@deprecated Use app:fontProviderCerts with Jetpack Core library instead.}
+         -->
         <attr name="fontProviderCerts" format="reference" />
+        <!-- Provides the system font family name to check before downloading the font. For example
+        if the fontProviderQuery asked for "Sans Serif", it is possible to define
+        fontProviderSystemFontFamily as "sans-serif" to tell the system to use "sans-serif" font
+        family if it exists on the system.
+         -->
+        <attr name="fontProviderSystemFontFamily" format="string" />
     </declare-styleable>
 
     <!-- Attributes that are read when parsing a  tag. -->
@@ -9233,4 +10332,55 @@
 
     <attr name="iconfactoryIconSize" format="dimension"/>
     <attr name="iconfactoryBadgeSize" format="dimension"/>
-</resources>
+    <!-- Perceptual luminance of a color, in accessibility friendly color space. From 0 to 100. -->
+    <attr name="lStar" format="float"/>
+
+    <!-- The attributes of the {@code <locale-config>} tag. -->
+    <!-- @FlaggedApi("android.content.res.default_locale") -->
+    <declare-styleable name="LocaleConfig">
+        <!-- The <a href="https://www.rfc-editor.org/rfc/bcp/bcp47.txt">IETF BCP47 language tag</a>
+       the strings in values/strings.xml (the default strings in the directory with no locale
+       qualifier) are in. -->
+        <attr name="defaultLocale" format="string"/>
+    </declare-styleable>
+
+    <!-- The attributes of the {@code <locale>} tag within {@code <locale-config>}. -->
+    <declare-styleable name="LocaleConfig_Locale">
+        <!-- The <a href="https://www.rfc-editor.org/rfc/bcp/bcp47.txt">IETF BCP47 language tag</a>
+        of the supported locale. {@link android.app.LocaleConfig} -->
+        <attr name="name" />
+    </declare-styleable>
+
+    <!-- @hide -->
+    <declare-styleable name="CachingIconView">
+        <!-- Maximum width of displayed drawable. Drawables exceeding this size will be downsampled. -->
+        <attr name="maxDrawableWidth" format="dimension"/>
+        <!-- Maximum width of height drawable. Drawables exceeding this size will be downsampled. -->
+        <attr name="maxDrawableHeight" format="dimension"/>
+    </declare-styleable>
+
+    <!-- =============================== -->
+    <!-- Credential Manager attributes -->
+    <!-- =============================== -->
+    <eat-comment />
+
+    <!-- Contains Credential Provider related metadata. Since providers are exposed
+         as services these should live under the service.
+    -->
+    <declare-styleable name="CredentialProvider">
+        <!-- A string that is displayed to the user in the Credential Manager settings
+             screen that can be used to provide more information about a provider. For
+             longer strings it will be truncated. -->
+        <attr name="settingsSubtitle" format="string" />
+        <!-- Fully qualified class name of an activity that allows the user to modify
+             the settings for this service. -->
+        <attr name="settingsActivity" />
+    </declare-styleable>
+
+    <!-- A list of capabilities that indicates to the OS what kinds of credentials
+             this provider supports. -->
+    <declare-styleable name="CredentialProvider_Capabilities" parent="CredentialProvider">
+        <!-- An individual capability declared by the provider. -->
+        <attr name="capability" format="string" />
+    </declare-styleable>
+    </resources>

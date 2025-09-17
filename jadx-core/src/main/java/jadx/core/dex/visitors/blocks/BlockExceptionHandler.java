@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -40,6 +41,7 @@ import jadx.core.dex.visitors.typeinference.TypeCompare;
 import jadx.core.utils.BlockUtils;
 import jadx.core.utils.InsnRemover;
 import jadx.core.utils.ListUtils;
+import jadx.core.utils.blocks.BlockSet;
 import jadx.core.utils.exceptions.JadxRuntimeException;
 
 public class BlockExceptionHandler {
@@ -64,6 +66,10 @@ public class BlockExceptionHandler {
 			removeMonitorExitFromExcHandler(mth, eh);
 		}
 		BlockProcessor.removeMarkedBlocks(mth);
+
+		BlockSet sorted = new BlockSet(mth);
+		BlockUtils.visitDFS(mth, sorted::add);
+		removeUnusedExcHandlers(mth, tryBlocks, sorted);
 		return true;
 	}
 
@@ -283,14 +289,7 @@ public class BlockExceptionHandler {
 		boolean catchInTry = innerTryBlock.getBlocks().stream().anyMatch(isHandlersIntersects(outerTryBlock));
 		boolean blocksOutsideHandler = outerTryBlock.getBlocks().stream().anyMatch(b -> !handlerBlocks.contains(b));
 
-		boolean makeInner = catchInHandler && (catchInTry || blocksOutsideHandler);
-		if (makeInner && innerTryBlock.isAllHandler()) {
-			// inner try block can't have catch-all handler
-			outerTryBlock.setBlocks(Utils.concatDistinct(outerTryBlock.getBlocks(), innerTryBlock.getBlocks()));
-			innerTryBlock.clear();
-			return false;
-		}
-		if (makeInner) {
+		if (catchInHandler && (catchInTry || blocksOutsideHandler)) {
 			// convert to inner
 			List<BlockNode> mergedBlocks = Utils.concatDistinct(outerTryBlock.getBlocks(), innerTryBlock.getBlocks());
 			innerTryBlock.getHandlers().removeAll(outerTryBlock.getHandlers());
@@ -299,7 +298,8 @@ public class BlockExceptionHandler {
 			outerTryBlock.setBlocks(mergedBlocks);
 			return false;
 		}
-		if (innerTryBlock.getHandlers().containsAll(outerTryBlock.getHandlers())) {
+		Set<ExceptionHandler> innerHandlerSet = new HashSet<>(innerTryBlock.getHandlers());
+		if (innerHandlerSet.containsAll(outerTryBlock.getHandlers())) {
 			// merge
 			List<BlockNode> mergedBlocks = Utils.concatDistinct(outerTryBlock.getBlocks(), innerTryBlock.getBlocks());
 			List<ExceptionHandler> handlers = Utils.concatDistinct(outerTryBlock.getHandlers(), innerTryBlock.getHandlers());
@@ -331,6 +331,17 @@ public class BlockExceptionHandler {
 			return false;
 		}
 		BlockNode bottom = searchBottomBlock(mth, blocks);
+		BlockNode splitReturn;
+		if (bottom != null && bottom.isReturnBlock()) {
+			if (Consts.DEBUG_EXC_HANDLERS) {
+				LOG.debug("TryCatch #{} bottom block ({}) is return, split", tryCatchBlock.id(), bottom);
+			}
+			splitReturn = bottom;
+			bottom = BlockSplitter.blockSplitTop(mth, bottom);
+			bottom.add(AFlag.SYNTHETIC);
+		} else {
+			splitReturn = null;
+		}
 		if (Consts.DEBUG_EXC_HANDLERS) {
 			LOG.debug("TryCatch #{} split: top {}, bottom: {}", tryCatchBlock.id(), top, bottom);
 		}
@@ -349,6 +360,18 @@ public class BlockExceptionHandler {
 			bottomSplitterBlock.add(AFlag.EXC_BOTTOM_SPLITTER);
 			bottomSplitterBlock.add(AFlag.SYNTHETIC);
 			BlockSplitter.connect(bottom, bottomSplitterBlock);
+			if (splitReturn != null) {
+				// redirect handler to return block instead synthetic split block to avoid self-loop
+				BlockSet bottomPreds = BlockSet.from(mth, bottom.getPredecessors());
+				for (ExceptionHandler handler : tryCatchBlock.getHandlers()) {
+					if (bottomPreds.intersects(handler.getBlocks())) {
+						BlockNode lastBlock = bottomPreds.intersect(handler.getBlocks()).getOne();
+						if (lastBlock != null) {
+							BlockSplitter.replaceConnection(lastBlock, bottom, splitReturn);
+						}
+					}
+				}
+			}
 		}
 
 		if (Consts.DEBUG_EXC_HANDLERS) {
@@ -590,5 +613,28 @@ public class BlockExceptionHandler {
 			return first.compareTo(second);
 		}
 		return r;
+	}
+
+	/**
+	 * Remove excHandlers that were not used when connecting.
+	 * Check first if the blocks are unreachable.
+	 */
+	private static void removeUnusedExcHandlers(MethodNode mth, List<TryCatchBlockAttr> tryBlocks, BlockSet blocks) {
+		for (ExceptionHandler eh : mth.getExceptionHandlers()) {
+			boolean notProcessed = true;
+			BlockNode handlerBlock = eh.getHandlerBlock();
+			if (handlerBlock == null || blocks.contains(handlerBlock)) {
+				continue;
+			}
+			for (TryCatchBlockAttr tcb : tryBlocks) {
+				if (tcb.getHandlers().contains(eh)) {
+					notProcessed = false;
+					break;
+				}
+			}
+			if (notProcessed) {
+				BlockProcessor.removeUnreachableBlock(handlerBlock, mth);
+			}
+		}
 	}
 }

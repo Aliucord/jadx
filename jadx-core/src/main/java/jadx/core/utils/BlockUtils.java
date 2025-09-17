@@ -7,14 +7,14 @@ import java.util.BitSet;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Deque;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
+import java.util.Objects;
 import java.util.Queue;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
 import org.jetbrains.annotations.Nullable;
@@ -35,7 +35,10 @@ import jadx.core.dex.nodes.IBlock;
 import jadx.core.dex.nodes.InsnNode;
 import jadx.core.dex.nodes.MethodNode;
 import jadx.core.dex.regions.conditions.IfCondition;
+import jadx.core.dex.trycatch.CatchAttr;
 import jadx.core.dex.trycatch.ExceptionHandler;
+import jadx.core.utils.blocks.BlockSet;
+import jadx.core.utils.blocks.DFSIteration;
 import jadx.core.utils.exceptions.JadxRuntimeException;
 
 public class BlockUtils {
@@ -247,8 +250,11 @@ public class BlockUtils {
 				|| type == InsnType.CONTINUE;
 	}
 
-	@Nullable
-	public static BlockNode getBlockByInsn(MethodNode mth, @Nullable InsnNode insn) {
+	public static @Nullable BlockNode getBlockByInsn(MethodNode mth, @Nullable InsnNode insn) {
+		return getBlockByInsn(mth, insn, mth.getBasicBlocks());
+	}
+
+	public static @Nullable BlockNode getBlockByInsn(MethodNode mth, @Nullable InsnNode insn, List<BlockNode> blocks) {
 		if (insn == null) {
 			return null;
 		}
@@ -258,7 +264,7 @@ public class BlockUtils {
 		if (insn.contains(AFlag.WRAPPED)) {
 			return getBlockByWrappedInsn(mth, insn);
 		}
-		for (BlockNode bn : mth.getBasicBlocks()) {
+		for (BlockNode bn : blocks) {
 			if (blockContains(bn, insn)) {
 				return bn;
 			}
@@ -410,6 +416,12 @@ public class BlockUtils {
 		return s.isEmpty() ? null : s.get(0);
 	}
 
+	@Nullable
+	public static BlockNode getPrevBlock(BlockNode block) {
+		List<BlockNode> preds = block.getPredecessors();
+		return preds.size() == 1 ? preds.get(0) : null;
+	}
+
 	/**
 	 * Return successor on path to 'pathEnd' block
 	 */
@@ -425,6 +437,26 @@ public class BlockUtils {
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * Return predecessor on path from 'pathStart' block
+	 */
+	public static @Nullable BlockNode getPrevBlockOnPath(MethodNode mth, BlockNode block, BlockNode pathStart) {
+		BlockSet preds = BlockSet.from(mth, block.getPredecessors());
+		if (preds.contains(pathStart)) {
+			return pathStart;
+		}
+		DFSIteration dfs = new DFSIteration(mth, pathStart, BlockNode::getCleanSuccessors);
+		while (true) {
+			BlockNode next = dfs.next();
+			if (next == null) {
+				return null;
+			}
+			if (preds.contains(next)) {
+				return next;
+			}
+		}
 	}
 
 	/**
@@ -474,28 +506,30 @@ public class BlockUtils {
 		}
 	}
 
-	public static void dfsVisit(MethodNode mth, Consumer<BlockNode> visitor) {
-		BitSet visited = newBlocksBitSet(mth);
-		Deque<BlockNode> queue = new ArrayDeque<>();
-		BlockNode enterBlock = mth.getEnterBlock();
-		queue.addLast(enterBlock);
-		visited.set(mth.getEnterBlock().getId());
+	public static List<BlockNode> collectAllSuccessors(MethodNode mth, BlockNode startBlock, boolean clean) {
+		List<BlockNode> list = new ArrayList<>(mth.getBasicBlocks().size());
+		Function<BlockNode, List<BlockNode>> nextFunc = clean ? BlockNode::getCleanSuccessors : BlockNode::getSuccessors;
+		visitDFS(mth, startBlock, nextFunc, list::add);
+		return list;
+	}
+
+	public static void visitDFS(MethodNode mth, Consumer<BlockNode> visitor) {
+		visitDFS(mth, mth.getEnterBlock(), BlockNode::getSuccessors, visitor);
+	}
+
+	public static void visitReverseDFS(MethodNode mth, Consumer<BlockNode> visitor) {
+		visitDFS(mth, mth.getExitBlock(), BlockNode::getPredecessors, visitor);
+	}
+
+	private static void visitDFS(MethodNode mth, BlockNode startBlock,
+			Function<BlockNode, List<BlockNode>> nextFunc, Consumer<BlockNode> visitor) {
+		DFSIteration dfsIteration = new DFSIteration(mth, startBlock, nextFunc);
 		while (true) {
-			BlockNode current = queue.pollLast();
-			if (current == null) {
+			BlockNode next = dfsIteration.next();
+			if (next == null) {
 				return;
 			}
-			visitor.accept(current);
-			List<BlockNode> successors = current.getSuccessors();
-			int count = successors.size();
-			for (int i = count - 1; i >= 0; i--) { // to preserve order in queue
-				BlockNode next = successors.get(i);
-				int nextId = next.getId();
-				if (!visited.get(nextId)) {
-					queue.addLast(next);
-					visited.set(nextId);
-				}
-			}
+			visitor.accept(next);
 		}
 	}
 
@@ -505,22 +539,29 @@ public class BlockUtils {
 			bs.or(blocksToBitSet(mth, stopBlocks));
 		}
 		List<BlockNode> list = new ArrayList<>();
-		traversePredecessors(start, bs, list::add);
+		traversePredecessors(start, bs, block -> {
+			list.add(block);
+			return false;
+		});
 		return list;
 	}
 
+	public static void visitPredecessorsUntil(MethodNode mth, BlockNode start, Predicate<BlockNode> visitor) {
+		traversePredecessors(start, newBlocksBitSet(mth), visitor);
+	}
+
 	/**
-	 * Up BFS
+	 * Up BFS.
+	 * To stop return true from predicate
 	 */
-	private static void traversePredecessors(BlockNode start, BitSet visited, Consumer<BlockNode> visitor) {
+	private static void traversePredecessors(BlockNode start, BitSet visited, Predicate<BlockNode> visitor) {
 		Queue<BlockNode> queue = new ArrayDeque<>();
 		queue.add(start);
 		while (true) {
 			BlockNode current = queue.poll();
-			if (current == null) {
+			if (current == null || visitor.test(current)) {
 				return;
 			}
-			visitor.accept(current);
 			for (BlockNode next : current.getPredecessors()) {
 				int id = next.getId();
 				if (!visited.get(id)) {
@@ -721,18 +762,22 @@ public class BlockUtils {
 	/**
 	 * Return common cross block for input set.
 	 *
-	 * @return null if cross is a method exit block.
+	 * @return could be one of the giving blocks. null if cross is a method exit block.
 	 */
 	@Nullable
 	public static BlockNode getPathCross(MethodNode mth, Collection<BlockNode> blocks) {
 		BitSet domFrontBS = newBlocksBitSet(mth);
+		BitSet tmpBS = newBlocksBitSet(mth); // store block itself and its domFrontier
 		boolean first = true;
 		for (BlockNode b : blocks) {
+			tmpBS.clear();
+			tmpBS.set(b.getId());
+			tmpBS.or(b.getDomFrontier());
 			if (first) {
-				domFrontBS.or(b.getDomFrontier());
+				domFrontBS.or(tmpBS);
 				first = false;
 			} else {
-				domFrontBS.and(b.getDomFrontier());
+				domFrontBS.and(tmpBS);
 			}
 		}
 		domFrontBS.clear(mth.getExitBlock().getId());
@@ -750,7 +795,7 @@ public class BlockUtils {
 		mth.getLoops().forEach(l -> excluded.set(l.getStart().getId()));
 		if (!mth.isNoExceptionHandlers()) {
 			// exclude exception handlers paths
-			mth.getExceptionHandlers().forEach(h -> mergeExcHandlerDomFrontier(mth, h, excluded));
+			mth.getExceptionHandlers().forEach(h -> addExcHandler(mth, h, excluded));
 		}
 		domFrontBS.andNot(excluded);
 		oneBlock = bitSetToOneBlock(mth, domFrontBS);
@@ -765,7 +810,6 @@ public class BlockUtils {
 				BitSet domFrontier = block.getDomFrontier();
 				if (!domFrontier.isEmpty()) {
 					combinedDF.or(domFrontier);
-					combinedDF.clear(block.getId());
 				}
 			});
 			combinedDF.andNot(excluded);
@@ -787,18 +831,13 @@ public class BlockUtils {
 		}
 	}
 
-	private static void mergeExcHandlerDomFrontier(MethodNode mth, ExceptionHandler handler, BitSet set) {
+	private static void addExcHandler(MethodNode mth, ExceptionHandler handler, BitSet set) {
 		BlockNode handlerBlock = handler.getHandlerBlock();
 		if (handlerBlock == null) {
 			mth.addDebugComment("Null handler block in: " + handler);
 			return;
 		}
-		BitSet domFrontier = handlerBlock.getDomFrontier();
-		if (domFrontier == null) {
-			mth.addDebugComment("Null dom frontier in handler: " + handler);
-			return;
-		}
-		set.or(domFrontier);
+		set.set(handlerBlock.getId());
 	}
 
 	public static BlockNode getPathCross(MethodNode mth, BlockNode b1, BlockNode b2) {
@@ -974,6 +1013,9 @@ public class BlockUtils {
 	}
 
 	public static boolean isAllBlocksEmpty(List<BlockNode> blocks) {
+		if (Utils.isEmpty(blocks)) {
+			return true;
+		}
 		for (BlockNode block : blocks) {
 			if (!block.getInstructions().isEmpty()) {
 				return false;
@@ -1130,104 +1172,6 @@ public class BlockUtils {
 		return false;
 	}
 
-	public static Map<BlockNode, BitSet> calcPostDominance(MethodNode mth) {
-		return calcPartialPostDominance(mth, mth.getBasicBlocks(), mth.getPreExitBlocks().get(0));
-	}
-
-	public static Map<BlockNode, BitSet> calcPartialPostDominance(MethodNode mth, Collection<BlockNode> blockNodes, BlockNode exitBlock) {
-		int blocksCount = mth.getBasicBlocks().size();
-		Map<BlockNode, BitSet> map = new HashMap<>(blocksCount);
-
-		BitSet initSet = new BitSet(blocksCount);
-		for (BlockNode block : blockNodes) {
-			initSet.set(block.getId());
-		}
-
-		for (BlockNode block : blockNodes) {
-			BitSet postDoms = new BitSet(blocksCount);
-			postDoms.or(initSet);
-			map.put(block, postDoms);
-		}
-		BitSet exitBitSet = map.get(exitBlock);
-		exitBitSet.clear();
-		exitBitSet.set(exitBlock.getId());
-
-		BitSet domSet = new BitSet(blocksCount);
-		boolean changed;
-		do {
-			changed = false;
-			for (BlockNode block : blockNodes) {
-				if (block == exitBlock) {
-					continue;
-				}
-				BitSet d = map.get(block);
-				if (!changed) {
-					domSet.clear();
-					domSet.or(d);
-				}
-				for (BlockNode scc : block.getSuccessors()) {
-					BitSet scPDoms = map.get(scc);
-					if (scPDoms != null) {
-						d.and(scPDoms);
-					}
-				}
-				d.set(block.getId());
-				if (!changed && !d.equals(domSet)) {
-					changed = true;
-					map.put(block, d);
-				}
-			}
-		} while (changed);
-
-		blockNodes.forEach(block -> {
-			BitSet postDoms = map.get(block);
-			postDoms.clear(block.getId());
-			if (postDoms.isEmpty()) {
-				map.put(block, EmptyBitSet.EMPTY);
-			}
-		});
-		return map;
-	}
-
-	@Nullable
-	public static BlockNode calcImmediatePostDominator(MethodNode mth, BlockNode block) {
-		BlockNode oneSuccessor = Utils.getOne(block.getSuccessors());
-		if (oneSuccessor != null) {
-			return oneSuccessor;
-		}
-		return calcImmediatePostDominator(mth, block, calcPostDominance(mth));
-	}
-
-	@Nullable
-	public static BlockNode calcPartialImmediatePostDominator(MethodNode mth, BlockNode block,
-			Collection<BlockNode> blockNodes, BlockNode exitBlock) {
-		BlockNode oneSuccessor = Utils.getOne(block.getSuccessors());
-		if (oneSuccessor != null) {
-			return oneSuccessor;
-		}
-		Map<BlockNode, BitSet> pDomsMap = calcPartialPostDominance(mth, blockNodes, exitBlock);
-		return calcImmediatePostDominator(mth, block, pDomsMap);
-	}
-
-	@Nullable
-	public static BlockNode calcImmediatePostDominator(MethodNode mth, BlockNode block, Map<BlockNode, BitSet> postDomsMap) {
-		BlockNode oneSuccessor = Utils.getOne(block.getSuccessors());
-		if (oneSuccessor != null) {
-			return oneSuccessor;
-		}
-		List<BlockNode> basicBlocks = mth.getBasicBlocks();
-		BitSet postDoms = postDomsMap.get(block);
-		BitSet bs = copyBlocksBitSet(mth, postDoms);
-		for (int i = bs.nextSetBit(0); i >= 0; i = bs.nextSetBit(i + 1)) {
-			BlockNode pdomBlock = basicBlocks.get(i);
-			BitSet pdoms = postDomsMap.get(pdomBlock);
-			if (pdoms != null) {
-				bs.andNot(pdoms);
-			}
-		}
-		return bitSetToOneBlock(mth, bs);
-	}
-
 	public static BlockNode getTopSplitterForHandler(BlockNode handlerBlock) {
 		BlockNode block = getBlockWithFlag(handlerBlock.getPredecessors(), AFlag.EXC_TOP_SPLITTER);
 		if (block == null) {
@@ -1244,5 +1188,102 @@ public class BlockUtils {
 			}
 		}
 		return null;
+	}
+
+	public static @Nullable CatchAttr getCatchAttrForInsn(MethodNode mth, InsnNode insn) {
+		CatchAttr catchAttr = insn.get(AType.EXC_CATCH);
+		if (catchAttr != null) {
+			return catchAttr;
+		}
+		BlockNode block = getBlockByInsn(mth, insn);
+		if (block == null) {
+			return null;
+		}
+		return block.get(AType.EXC_CATCH);
+	}
+
+	public static boolean isEqualPaths(BlockNode b1, BlockNode b2) {
+		if (b1 == b2) {
+			return true;
+		}
+		if (b1 == null || b2 == null) {
+			return false;
+		}
+		return isEqualReturnBlocks(b1, b2) || isEmptySyntheticPath(b1, b2) || isDuplicateBlockPath(b1, b2);
+	}
+
+	private static boolean isEmptySyntheticPath(BlockNode b1, BlockNode b2) {
+		BlockNode n1 = followEmptyPath(b1);
+		BlockNode n2 = followEmptyPath(b2);
+		return n1 == n2 || isEqualReturnBlocks(n1, n2);
+	}
+
+	public static boolean isEqualReturnBlocks(BlockNode b1, BlockNode b2) {
+		if (!b1.isReturnBlock() || !b2.isReturnBlock()) {
+			return false;
+		}
+		List<InsnNode> b1Insns = b1.getInstructions();
+		List<InsnNode> b2Insns = b2.getInstructions();
+		if (b1Insns.size() != 1 || b2Insns.size() != 1) {
+			return false;
+		}
+		InsnNode i1 = b1Insns.get(0);
+		InsnNode i2 = b2Insns.get(0);
+		if (i1.getArgsCount() != i2.getArgsCount()) {
+			return false;
+		}
+		if (i1.getArgsCount() == 0) {
+			return true;
+		}
+		InsnArg firstArg = i1.getArg(0);
+		InsnArg secondArg = i2.getArg(0);
+		if (firstArg.isSameConst(secondArg)) {
+			return true;
+		}
+		if (i1.getSourceLine() != i2.getSourceLine()) {
+			return false;
+		}
+		return firstArg.equals(secondArg);
+	}
+
+	public static boolean isDuplicateBlockPath(BlockNode first, BlockNode second) {
+		if (first.getSuccessors().size() == 1 && second.getSuccessors().size() == 1
+				&& first.getSuccessors().get(0).equals(second.getSuccessors().get(0))) {
+			return isSameInsnsBlocks(first, second);
+		}
+		return false;
+	}
+
+	public static boolean isSameInsnsBlocks(BlockNode first, BlockNode second) {
+		List<InsnNode> firstInsns = first.getInstructions();
+		List<InsnNode> secondInsns = second.getInstructions();
+		if (firstInsns.size() != secondInsns.size()) {
+			return false;
+		}
+		int len = firstInsns.size();
+		for (int i = 0; i < len; i++) {
+			InsnNode firstInsn = firstInsns.get(i);
+			InsnNode secondInsn = secondInsns.get(i);
+			if (!isInsnDeepEquals(firstInsn, secondInsn)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean isInsnDeepEquals(InsnNode first, InsnNode second) {
+		if (first == second) {
+			return true;
+		}
+		return first.isSame(second)
+				&& Objects.equals(first.getArguments(), second.getArguments())
+				&& resultIsSameReg(first.getResult(), second.getResult());
+	}
+
+	private static boolean resultIsSameReg(RegisterArg first, RegisterArg second) {
+		if (first == null || second == null) {
+			return first == second;
+		}
+		return first.getRegNum() == second.getRegNum();
 	}
 }

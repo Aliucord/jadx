@@ -74,7 +74,7 @@ public abstract class DexInsnFormat {
 		@Override
 		public void decode(DexInsnData insn, int opcodeUnit, SectionReader in) {
 			int[] regs = insn.getArgsReg();
-			regs[0] = signedByte1(opcodeUnit);
+			regs[0] = byte1(opcodeUnit);
 			insn.setTarget(insn.getOffset() + in.readShort());
 		}
 	};
@@ -95,7 +95,7 @@ public abstract class DexInsnFormat {
 			regs[0] = byte1(opcodeUnit);
 
 			long literal = in.readShort();
-			literal <<= (byte0(opcodeUnit) == DexOpcodes.CONST_HIGH16) ? 16 : 48;
+			literal <<= byte0(opcodeUnit) == DexOpcodes.CONST_HIGH16 ? 16 : 48;
 			insn.setLiteral(literal);
 		}
 	};

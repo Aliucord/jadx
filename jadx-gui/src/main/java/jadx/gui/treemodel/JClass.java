@@ -1,29 +1,43 @@
 package jadx.gui.treemodel;
 
+import java.util.List;
+import java.util.Set;
+
 import javax.swing.Icon;
 import javax.swing.ImageIcon;
+import javax.swing.JPopupMenu;
 
 import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import jadx.api.ICodeInfo;
 import jadx.api.JavaClass;
 import jadx.api.JavaField;
 import jadx.api.JavaMethod;
 import jadx.api.JavaNode;
+import jadx.api.data.ICodeRename;
+import jadx.api.data.impl.JadxCodeRename;
+import jadx.api.data.impl.JadxNodeRef;
+import jadx.core.deobf.NameMapper;
 import jadx.core.dex.attributes.AFlag;
 import jadx.core.dex.info.AccessInfo;
-import jadx.gui.ui.TabbedPane;
+import jadx.core.dex.nodes.ICodeNode;
+import jadx.gui.jobs.SimpleTask;
+import jadx.gui.ui.MainWindow;
 import jadx.gui.ui.codearea.ClassCodeContentPanel;
 import jadx.gui.ui.panel.ContentPanel;
+import jadx.gui.ui.popupmenu.JClassPopupMenu;
+import jadx.gui.ui.tab.TabbedPane;
 import jadx.gui.utils.CacheObject;
+import jadx.gui.utils.Icons;
+import jadx.gui.utils.JNodeCache;
 import jadx.gui.utils.NLS;
 import jadx.gui.utils.UiUtils;
 
-public class JClass extends JLoadableNode {
+public class JClass extends JLoadableNode implements JRenameNode {
 	private static final long serialVersionUID = -1239986875244097177L;
 
-	private static final ImageIcon ICON_CLASS = UiUtils.openSvgIcon("nodes/class");
 	private static final ImageIcon ICON_CLASS_ABSTRACT = UiUtils.openSvgIcon("nodes/abstractClass");
 	private static final ImageIcon ICON_CLASS_PUBLIC = UiUtils.openSvgIcon("nodes/publicClass");
 	private static final ImageIcon ICON_CLASS_PRIVATE = UiUtils.openSvgIcon("nodes/privateClass");
@@ -34,22 +48,27 @@ public class JClass extends JLoadableNode {
 
 	private final transient JavaClass cls;
 	private final transient JClass jParent;
+	private final transient JNodeCache nodeCache;
+
 	private transient boolean loaded;
 
-	public JClass(JavaClass cls) {
-		this.cls = cls;
-		this.jParent = null;
-		this.loaded = false;
-	}
-
-	public JClass(JavaClass cls, JClass parent) {
+	/**
+	 * Should be called only from JNodeCache!
+	 */
+	public JClass(JavaClass cls, JClass parent, JNodeCache nodeCache) {
 		this.cls = cls;
 		this.jParent = parent;
-		this.loaded = true;
+		this.loaded = parent != null;
+		this.nodeCache = nodeCache;
 	}
 
 	public JavaClass getCls() {
 		return cls;
+	}
+
+	@Override
+	public boolean canRename() {
+		return !cls.getClassNode().contains(AFlag.DONT_RENAME);
 	}
 
 	@Override
@@ -58,8 +77,15 @@ public class JClass extends JLoadableNode {
 	}
 
 	@Override
-	public boolean canRename() {
-		return !cls.getClassNode().contains(AFlag.DONT_RENAME);
+	public synchronized @Nullable SimpleTask getLoadTask() {
+		if (loaded) {
+			return null;
+		}
+		JClass rootClass = getRootClass();
+		return new SimpleTask(NLS.str("progress.decompile"),
+				() -> rootClass.getCls().getClassNode().decompile(), // run decompilation in background
+				rootClass::load // load class internals and update UI
+		);
 	}
 
 	private synchronized void load() {
@@ -91,15 +117,15 @@ public class JClass extends JLoadableNode {
 			add(new TextNode(NLS.str("tree.loading")));
 		} else {
 			for (JavaClass javaClass : cls.getInnerClasses()) {
-				JClass innerCls = new JClass(javaClass, this);
+				JClass innerCls = nodeCache.makeFrom(javaClass);
 				add(innerCls);
 				innerCls.update();
 			}
 			for (JavaField f : cls.getFields()) {
-				add(new JField(f, this));
+				add(nodeCache.makeFrom(f));
 			}
 			for (JavaMethod m : cls.getMethods()) {
-				add(new JMethod(m, this));
+				add(nodeCache.makeFrom(m));
 			}
 		}
 	}
@@ -121,6 +147,11 @@ public class JClass extends JLoadableNode {
 	@Override
 	public String getSyntaxName() {
 		return SyntaxConstants.SYNTAX_STYLE_JAVA;
+	}
+
+	@Override
+	public JPopupMenu onTreePopupMenu(MainWindow mainWindow) {
+		return new JClassPopupMenu(mainWindow, this);
 	}
 
 	@Override
@@ -147,12 +178,17 @@ public class JClass extends JLoadableNode {
 		if (accessInfo.isPublic()) {
 			return ICON_CLASS_PUBLIC;
 		}
-		return ICON_CLASS;
+		return Icons.CLASS;
 	}
 
 	@Override
 	public JavaNode getJavaNode() {
 		return cls;
+	}
+
+	@Override
+	public ICodeNode getCodeNodeRef() {
+		return cls.getClassNode();
 	}
 
 	@Override
@@ -175,6 +211,50 @@ public class JClass extends JLoadableNode {
 
 	public String getFullName() {
 		return cls.getFullName();
+	}
+
+	@Override
+	public String getTitle() {
+		return makeLongStringHtml();
+	}
+
+	@Override
+	public boolean isValidName(String newName) {
+		if (NameMapper.isValidIdentifier(newName)) {
+			return true;
+		}
+		if (cls.isInner()) {
+			// disallow to change package for inner classes
+			return false;
+		}
+		if (NameMapper.isValidFullIdentifier(newName)) {
+			return true;
+		}
+		// moving to default pkg
+		return newName.startsWith(".") && NameMapper.isValidIdentifier(newName.substring(1));
+	}
+
+	@Override
+	public ICodeRename buildCodeRename(String newName, Set<ICodeRename> renames) {
+		return new JadxCodeRename(JadxNodeRef.forCls(cls), newName);
+	}
+
+	@Override
+	public void removeAlias() {
+		// reset only short name, package name should be reset explicitly using PackageNode
+		cls.getClassNode().rename("");
+	}
+
+	@Override
+	public void addUpdateNodes(List<JavaNode> toUpdate) {
+		toUpdate.add(cls);
+		toUpdate.addAll(cls.getUseIn());
+	}
+
+	@Override
+	public void reload(MainWindow mainWindow) {
+		// TODO: rebuild packages only if class package has been changed
+		mainWindow.reloadTreePreservingState();
 	}
 
 	@Override

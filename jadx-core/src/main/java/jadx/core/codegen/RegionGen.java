@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -12,14 +13,18 @@ import jadx.api.CommentsLevel;
 import jadx.api.ICodeWriter;
 import jadx.api.metadata.annotations.InsnCodeOffset;
 import jadx.api.metadata.annotations.VarNode;
+import jadx.api.plugins.input.data.AccessFlags;
 import jadx.api.plugins.input.data.annotations.EncodedValue;
 import jadx.api.plugins.input.data.attributes.JadxAttrType;
+import jadx.core.clsp.ClspClass;
+import jadx.core.codegen.utils.CodeGenUtils;
 import jadx.core.dex.attributes.AFlag;
 import jadx.core.dex.attributes.AType;
 import jadx.core.dex.attributes.nodes.DeclareVariablesAttr;
 import jadx.core.dex.attributes.nodes.ForceReturnAttr;
 import jadx.core.dex.attributes.nodes.LoopLabelAttr;
 import jadx.core.dex.info.ClassInfo;
+import jadx.core.dex.info.FieldInfo;
 import jadx.core.dex.instructions.SwitchInsn;
 import jadx.core.dex.instructions.args.ArgType;
 import jadx.core.dex.instructions.args.CodeVar;
@@ -32,7 +37,6 @@ import jadx.core.dex.nodes.FieldNode;
 import jadx.core.dex.nodes.IBlock;
 import jadx.core.dex.nodes.IContainer;
 import jadx.core.dex.nodes.InsnNode;
-import jadx.core.dex.regions.Region;
 import jadx.core.dex.regions.SwitchRegion;
 import jadx.core.dex.regions.SwitchRegion.CaseInfo;
 import jadx.core.dex.regions.SynchronizedRegion;
@@ -45,7 +49,6 @@ import jadx.core.dex.regions.loops.LoopRegion;
 import jadx.core.dex.regions.loops.LoopType;
 import jadx.core.dex.trycatch.ExceptionHandler;
 import jadx.core.utils.BlockUtils;
-import jadx.core.utils.CodeGenUtils;
 import jadx.core.utils.RegionUtils;
 import jadx.core.utils.Utils;
 import jadx.core.utils.exceptions.CodegenException;
@@ -147,15 +150,12 @@ public class RegionGen extends InsnGen {
 	 * Connect if-else-if block
 	 */
 	private boolean connectElseIf(ICodeWriter code, IContainer els) throws CodegenException {
-		if (els.contains(AFlag.ELSE_IF_CHAIN) && els instanceof Region) {
-			List<IContainer> subBlocks = ((Region) els).getSubBlocks();
-			if (subBlocks.size() == 1) {
-				IContainer elseBlock = subBlocks.get(0);
-				if (elseBlock instanceof IfRegion) {
-					declareVars(code, elseBlock);
-					makeIf((IfRegion) elseBlock, code, false);
-					return true;
-				}
+		if (els.contains(AFlag.ELSE_IF_CHAIN)) {
+			IContainer elseBlock = RegionUtils.getSingleSubBlock(els);
+			if (elseBlock instanceof IfRegion) {
+				declareVars(code, elseBlock);
+				makeIf((IfRegion) elseBlock, code, false);
+				return true;
 			}
 		}
 		return false;
@@ -272,23 +272,38 @@ public class RegionGen extends InsnGen {
 
 	private void addCaseKey(ICodeWriter code, InsnArg arg, Object k) throws CodegenException {
 		if (k instanceof FieldNode) {
-			FieldNode fn = (FieldNode) k;
-			if (fn.getParentClass().isEnum()) {
-				code.add(fn.getAlias());
-			} else {
-				staticField(code, fn.getFieldInfo());
-				if (mth.checkCommentsLevel(CommentsLevel.INFO)) {
-					// print original value, sometimes replaced with incorrect field
-					EncodedValue constVal = fn.get(JadxAttrType.CONSTANT_VALUE);
-					if (constVal != null && constVal.getValue() != null) {
-						code.add(" /* ").add(constVal.getValue().toString()).add(" */");
-					}
-				}
-			}
+			FieldNode fld = (FieldNode) k;
+			useField(code, fld.getFieldInfo(), fld);
+		} else if (k instanceof FieldInfo) {
+			useField(code, (FieldInfo) k, null);
 		} else if (k instanceof Integer) {
 			code.add(TypeGen.literalToString((Integer) k, arg.getType(), mth, fallback));
+		} else if (k instanceof String) {
+			code.add('\"').add((String) k).add('\"');
 		} else {
 			throw new JadxRuntimeException("Unexpected key in switch: " + (k != null ? k.getClass() : null));
+		}
+	}
+
+	private void useField(ICodeWriter code, FieldInfo fldInfo, @Nullable FieldNode fld) throws CodegenException {
+		boolean isEnum;
+		if (fld != null) {
+			isEnum = fld.getParentClass().isEnum();
+		} else {
+			ClspClass clsDetails = root.getClsp().getClsDetails(fldInfo.getDeclClass().getType());
+			isEnum = clsDetails != null && clsDetails.hasAccFlag(AccessFlags.ENUM);
+		}
+		if (isEnum) {
+			code.add(fldInfo.getAlias());
+			return;
+		}
+		staticField(code, fldInfo);
+		if (fld != null && mth.checkCommentsLevel(CommentsLevel.INFO)) {
+			// print original value, sometimes replaced with incorrect field
+			EncodedValue constVal = fld.get(JadxAttrType.CONSTANT_VALUE);
+			if (constVal != null && constVal.getValue() != null) {
+				code.add(" /* ").add(constVal.getValue().toString()).add(" */");
+			}
 		}
 	}
 

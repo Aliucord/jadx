@@ -1,5 +1,7 @@
 package jadx.gui.treemodel;
 
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
@@ -7,23 +9,31 @@ import java.util.Map;
 
 import javax.swing.Icon;
 import javax.swing.ImageIcon;
+import javax.swing.JPopupMenu;
 
 import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
 import org.jetbrains.annotations.Nullable;
 
 import jadx.api.ICodeInfo;
-import jadx.api.ICodeWriter;
 import jadx.api.ResourceFile;
 import jadx.api.ResourceType;
 import jadx.api.ResourcesLoader;
 import jadx.api.impl.SimpleCodeInfo;
+import jadx.api.resources.ResourceContentType;
 import jadx.core.utils.ListUtils;
 import jadx.core.utils.Utils;
 import jadx.core.xmlgen.ResContainer;
-import jadx.gui.ui.TabbedPane;
+import jadx.gui.jobs.SimpleTask;
+import jadx.gui.ui.MainWindow;
+import jadx.gui.ui.codearea.AbstractCodeArea;
+import jadx.gui.ui.codearea.BinaryContentPanel;
 import jadx.gui.ui.codearea.CodeContentPanel;
 import jadx.gui.ui.panel.ContentPanel;
+import jadx.gui.ui.panel.FontPanel;
 import jadx.gui.ui.panel.ImagePanel;
+import jadx.gui.ui.popupmenu.JResourcePopupMenu;
+import jadx.gui.ui.tab.TabbedPane;
+import jadx.gui.utils.Icons;
 import jadx.gui.utils.NLS;
 import jadx.gui.utils.UiUtils;
 import jadx.gui.utils.res.ResTableHelper;
@@ -32,14 +42,20 @@ public class JResource extends JLoadableNode {
 	private static final long serialVersionUID = -201018424302612434L;
 
 	private static final ImageIcon ROOT_ICON = UiUtils.openSvgIcon("nodes/resourcesRoot");
-	private static final ImageIcon FOLDER_ICON = UiUtils.openSvgIcon("nodes/folder");
-	private static final ImageIcon FILE_ICON = UiUtils.openSvgIcon("nodes/file_any_type");
 	private static final ImageIcon ARSC_ICON = UiUtils.openSvgIcon("nodes/resourceBundle");
 	private static final ImageIcon XML_ICON = UiUtils.openSvgIcon("nodes/xml");
 	private static final ImageIcon IMAGE_ICON = UiUtils.openSvgIcon("nodes/ImagesFileType");
 	private static final ImageIcon SO_ICON = UiUtils.openSvgIcon("nodes/binaryFile");
 	private static final ImageIcon MANIFEST_ICON = UiUtils.openSvgIcon("nodes/manifest");
 	private static final ImageIcon JAVA_ICON = UiUtils.openSvgIcon("nodes/java");
+	private static final ImageIcon APK_ICON = UiUtils.openSvgIcon("nodes/archiveApk");
+	private static final ImageIcon AUDIO_ICON = UiUtils.openSvgIcon("nodes/audioFile");
+	private static final ImageIcon VIDEO_ICON = UiUtils.openSvgIcon("nodes/videoFile");
+	private static final ImageIcon FONT_ICON = UiUtils.openSvgIcon("nodes/fontFile");
+	private static final ImageIcon HTML_ICON = UiUtils.openSvgIcon("nodes/html");
+	private static final ImageIcon JSON_ICON = UiUtils.openSvgIcon("nodes/json");
+	private static final ImageIcon TEXT_ICON = UiUtils.openSvgIcon("nodes/text");
+	private static final ImageIcon ARCHIVE_ICON = UiUtils.openSvgIcon("nodes/archive");
 	private static final ImageIcon UNKNOWN_ICON = UiUtils.openSvgIcon("nodes/unknown");
 
 	public static final Comparator<JResource> RESOURCES_COMPARATOR =
@@ -59,7 +75,7 @@ public class JResource extends JLoadableNode {
 
 	private transient volatile boolean loaded;
 	private transient List<JResource> subNodes = Collections.emptyList();
-	private transient ICodeInfo content;
+	private transient ICodeInfo content = ICodeInfo.EMPTY;
 
 	public JResource(ResourceFile resFile, String name, JResType type) {
 		this(resFile, name, name, type);
@@ -73,7 +89,7 @@ public class JResource extends JLoadableNode {
 		this.loaded = false;
 	}
 
-	public final void update() {
+	public synchronized void update() {
 		removeAllChildren();
 		if (Utils.isEmpty(subNodes)) {
 			if (type == JResType.DIR || type == JResType.ROOT
@@ -87,6 +103,10 @@ public class JResource extends JLoadableNode {
 				res.update();
 				add(res);
 			}
+			if (type != JResType.FILE) {
+				// no content, nothing to load
+				loaded = true;
+			}
 		}
 	}
 
@@ -94,6 +114,14 @@ public class JResource extends JLoadableNode {
 	public synchronized void loadNode() {
 		getCodeInfo();
 		update();
+	}
+
+	@Override
+	public synchronized SimpleTask getLoadTask() {
+		if (loaded) {
+			return null;
+		}
+		return new SimpleTask(NLS.str("progress.load"), this::getCodeInfo, this::update);
 	}
 
 	@Override
@@ -129,10 +157,26 @@ public class JResource extends JLoadableNode {
 		if (resFile == null) {
 			return null;
 		}
-		if (resFile.getType() == ResourceType.IMG) {
-			return new ImagePanel(tabbedPane, this);
+		// TODO: allow to register custom viewers
+		switch (resFile.getType()) {
+			case IMG:
+				return new ImagePanel(tabbedPane, this);
+			case FONT:
+				return new FontPanel(tabbedPane, this);
 		}
-		return new CodeContentPanel(tabbedPane, this);
+		if (getContentType() == ResourceContentType.CONTENT_BINARY) {
+			return new BinaryContentPanel(tabbedPane, this, false);
+		}
+		if (getSyntaxByExtension(resFile.getDeobfName()) != null) {
+			return new CodeContentPanel(tabbedPane, this);
+		}
+		// unknown file type, show both text and binary
+		return new BinaryContentPanel(tabbedPane, this, true);
+	}
+
+	@Override
+	public JPopupMenu onTreePopupMenu(MainWindow mainWindow) {
+		return new JResourcePopupMenu(mainWindow, this);
 	}
 
 	@Override
@@ -146,11 +190,16 @@ public class JResource extends JLoadableNode {
 		return codeInfo;
 	}
 
+	@Override
+	public ResourceContentType getContentType() {
+		if (type == JResType.FILE) {
+			return resFile.getType().getContentType();
+		}
+		return ResourceContentType.CONTENT_NONE;
+	}
+
 	private ICodeInfo loadContent() {
 		if (resFile == null || type != JResType.FILE) {
-			return ICodeInfo.EMPTY;
-		}
-		if (!isSupportedForView(resFile.getType())) {
 			return ICodeInfo.EMPTY;
 		}
 		ResContainer rc = resFile.loadContent();
@@ -162,6 +211,7 @@ public class JResource extends JLoadableNode {
 			List<JResource> nodes = ResTableHelper.buildTree(rc);
 			sortResNodes(nodes);
 			subNodes = nodes;
+			UiUtils.uiRun(this::update);
 			return codeInfo;
 		}
 		// single node
@@ -176,14 +226,23 @@ public class JResource extends JLoadableNode {
 
 			case RES_LINK:
 				try {
-					return ResourcesLoader.decodeStream(rc.getResLink(), (size, is) -> {
+					ResourceFile resourceFile = rc.getResLink();
+					return ResourcesLoader.decodeStream(resourceFile, (size, is) -> {
+						// TODO: check size before loading
 						if (size > 10 * 1024 * 1024L) {
 							return new SimpleCodeInfo("File too large for view");
 						}
-						return ResourcesLoader.loadToCodeWriter(is);
+						Charset charset;
+						if (resourceFile.getType().getContentType() == ResourceContentType.CONTENT_TEXT) {
+							charset = StandardCharsets.UTF_8;
+						} else {
+							// force one byte charset for binary data to have the same offsets as in a byte array
+							charset = StandardCharsets.US_ASCII;
+						}
+						return ResourcesLoader.loadToCodeWriter(is, charset);
 					});
 				} catch (Exception e) {
-					return new SimpleCodeInfo("Failed to load resource file:" + ICodeWriter.NL + Utils.getStackTrace(e));
+					return new SimpleCodeInfo("Failed to load resource file:\n" + Utils.getStackTrace(e));
 				}
 
 			case DECODED_DATA:
@@ -217,6 +276,7 @@ public class JResource extends JLoadableNode {
 
 	private static final Map<String, String> EXTENSION_TO_FILE_SYNTAX = jadx.core.utils.Utils.newConstStringMap(
 			"java", SyntaxConstants.SYNTAX_STYLE_JAVA,
+			"smali", AbstractCodeArea.SYNTAX_STYLE_SMALI,
 			"js", SyntaxConstants.SYNTAX_STYLE_JAVASCRIPT,
 			"ts", SyntaxConstants.SYNTAX_STYLE_TYPESCRIPT,
 			"json", SyntaxConstants.SYNTAX_STYLE_JSON,
@@ -244,7 +304,7 @@ public class JResource extends JLoadableNode {
 			case ROOT:
 				return ROOT_ICON;
 			case DIR:
-				return FOLDER_ICON;
+				return Icons.FOLDER;
 
 			case FILE:
 				ResourceType resType = resFile.getType();
@@ -261,30 +321,61 @@ public class JResource extends JLoadableNode {
 						return SO_ICON;
 					case CODE:
 						return JAVA_ICON;
+					case APK:
+						return APK_ICON;
+					case VIDEOS:
+						return VIDEO_ICON;
+					case SOUNDS:
+						return AUDIO_ICON;
+					case FONT:
+						return FONT_ICON;
+					case HTML:
+						return HTML_ICON;
+					case JSON:
+						return JSON_ICON;
+					case TEXT:
+						return TEXT_ICON;
+					case ARCHIVE:
+						return ARCHIVE_ICON;
 					case UNKNOWN:
 						return UNKNOWN_ICON;
 				}
 				return UNKNOWN_ICON;
 		}
-		return FILE_ICON;
+		return Icons.FILE;
 	}
 
 	public static boolean isSupportedForView(ResourceType type) {
 		switch (type) {
-			case CODE:
-			case FONT:
-			case LIB:
-			case MEDIA:
+			case SOUNDS:
+			case VIDEOS:
+			case ARCHIVE:
+			case APK:
 				return false;
 
 			case MANIFEST:
 			case XML:
 			case ARSC:
 			case IMG:
+			case LIB:
+			case FONT:
+			case TEXT:
+			case JSON:
+			case HTML:
 			case UNKNOWN:
 				return true;
 		}
 		return true;
+	}
+
+	public static boolean isOpenInExternalTool(ResourceType type) {
+		switch (type) {
+			case SOUNDS:
+			case VIDEOS:
+				return true;
+			default:
+				return false;
+		}
 	}
 
 	public ResourceFile getResFile() {
@@ -294,6 +385,14 @@ public class JResource extends JLoadableNode {
 	@Override
 	public JClass getJParent() {
 		return null;
+	}
+
+	@Override
+	public String getID() {
+		if (type == JResType.ROOT) {
+			return "JResources";
+		}
+		return makeString();
 	}
 
 	@Override
@@ -314,11 +413,12 @@ public class JResource extends JLoadableNode {
 		if (o == null || getClass() != o.getClass()) {
 			return false;
 		}
-		return name.equals(((JResource) o).name);
+		JResource other = (JResource) o;
+		return name.equals(other.name) && type.equals(other.type);
 	}
 
 	@Override
 	public int hashCode() {
-		return name.hashCode();
+		return name.hashCode() + 31 * type.ordinal();
 	}
 }

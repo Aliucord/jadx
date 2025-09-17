@@ -99,6 +99,11 @@ public final class JavaClass implements JavaNode {
 		return false;
 	}
 
+	@Override
+	public ICodeNodeRef getCodeNodeRef() {
+		return cls;
+	}
+
 	/**
 	 * Internal API. Not Stable!
 	 */
@@ -117,8 +122,6 @@ public final class JavaClass implements JavaNode {
 		if (listsLoaded) {
 			return null;
 		}
-		listsLoaded = true;
-
 		ICodeInfo code;
 		if (cls.getState().isProcessComplete()) {
 			// already decompiled -> class internals loaded
@@ -126,7 +129,12 @@ public final class JavaClass implements JavaNode {
 		} else {
 			code = cls.decompile();
 		}
+		loadLists();
+		return code;
+	}
 
+	private void loadLists() {
+		listsLoaded = true;
 		JadxDecompiler rootDecompiler = getRootDecompiler();
 		int inClsCount = cls.getInnerClasses().size();
 		if (inClsCount != 0) {
@@ -134,7 +142,7 @@ public final class JavaClass implements JavaNode {
 			for (ClassNode inner : cls.getInnerClasses()) {
 				if (!inner.contains(AFlag.DONT_GENERATE)) {
 					JavaClass javaClass = rootDecompiler.convertClassNode(inner);
-					javaClass.load();
+					javaClass.loadLists();
 					list.add(javaClass);
 				}
 			}
@@ -145,7 +153,7 @@ public final class JavaClass implements JavaNode {
 			List<JavaClass> list = new ArrayList<>(inlinedClsCount);
 			for (ClassNode inner : cls.getInlinedClasses()) {
 				JavaClass javaClass = rootDecompiler.convertClassNode(inner);
-				javaClass.load();
+				javaClass.loadLists();
 				list.add(javaClass);
 			}
 			this.inlinedClasses = Collections.unmodifiableList(list);
@@ -173,7 +181,6 @@ public final class JavaClass implements JavaNode {
 			mths.sort(Comparator.comparing(JavaMethod::getName));
 			this.methods = Collections.unmodifiableList(mths);
 		}
-		return code;
 	}
 
 	JadxDecompiler getRootDecompiler() {
@@ -245,6 +252,10 @@ public final class JavaClass implements JavaNode {
 
 	public String getPackage() {
 		return cls.getPackage();
+	}
+
+	public JavaPackage getJavaPackage() {
+		return cls.getPackageNode().getJavaNode();
 	}
 
 	@Override
@@ -329,7 +340,7 @@ public final class JavaClass implements JavaNode {
 
 	@Override
 	public void removeAlias() {
-		this.cls.getClassInfo().removeAlias();
+		cls.removeAlias();
 	}
 
 	@Override

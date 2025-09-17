@@ -5,9 +5,12 @@ import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.StringJoiner;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
@@ -17,8 +20,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 
+import jadx.api.JadxArgs;
 import jadx.api.data.ICodeComment;
 import jadx.api.data.ICodeRename;
 import jadx.api.data.IJavaCodeRef;
@@ -29,18 +32,21 @@ import jadx.api.data.impl.JadxCodeRef;
 import jadx.api.data.impl.JadxCodeRename;
 import jadx.api.data.impl.JadxNodeRef;
 import jadx.api.plugins.utils.CommonFileUtils;
-import jadx.core.utils.GsonUtils;
 import jadx.core.utils.exceptions.JadxRuntimeException;
+import jadx.core.utils.files.FileUtils;
+import jadx.gui.cache.manager.CacheManager;
 import jadx.gui.settings.data.ProjectData;
 import jadx.gui.settings.data.TabViewState;
 import jadx.gui.ui.MainWindow;
 import jadx.gui.ui.codearea.EditorViewState;
 import jadx.gui.utils.RelativePathTypeAdapter;
 
+import static jadx.core.utils.GsonUtils.defaultGsonBuilder;
+import static jadx.core.utils.GsonUtils.interfaceReplace;
+
 public class JadxProject {
 	private static final Logger LOG = LoggerFactory.getLogger(JadxProject.class);
 
-	private static final int CURRENT_PROJECT_VERSION = 1;
 	public static final String PROJECT_EXTENSION = "jadx";
 
 	private static final int SEARCH_HISTORY_LIMIT = 30;
@@ -59,6 +65,15 @@ public class JadxProject {
 		this.mainWindow = mainWindow;
 	}
 
+	public void fillJadxArgs(JadxArgs jadxArgs) {
+		jadxArgs.setInputFiles(FileUtils.toFiles(getFilePaths()));
+		if (jadxArgs.getUserRenamesMappingsPath() == null) {
+			jadxArgs.setUserRenamesMappingsPath(getMappingsPath());
+		}
+		jadxArgs.setCodeData(getCodeData());
+		jadxArgs.getPluginOptions().putAll(data.getPluginOptions());
+	}
+
 	public @Nullable Path getWorkingDir() {
 		if (projectPath != null) {
 			return projectPath.toAbsolutePath().getParent();
@@ -71,8 +86,10 @@ public class JadxProject {
 		return null;
 	}
 
-	@Nullable
-	public Path getProjectPath() {
+	/**
+	 * @return null if project not saved
+	 */
+	public @Nullable Path getProjectPath() {
 		return projectPath;
 	}
 
@@ -87,40 +104,43 @@ public class JadxProject {
 	}
 
 	public void setFilePaths(List<Path> files) {
-		if (!files.equals(getFilePaths())) {
+		if (files.equals(getFilePaths())) {
+			return;
+		}
+		if (files.isEmpty()) {
 			data.setFiles(files);
-			String joinedName = files.stream().map(p -> CommonFileUtils.removeFileExtension(p.getFileName().toString()))
-					.collect(Collectors.joining("_"));
-			this.name = StringUtils.abbreviate(joinedName, 100);
-			changed();
-		}
-	}
-
-	public List<String[]> getTreeExpansions() {
-		return data.getTreeExpansions();
-	}
-
-	public void addTreeExpansion(String[] expansion) {
-		data.getTreeExpansions().add(expansion);
-		changed();
-	}
-
-	public void removeTreeExpansion(String[] expansion) {
-		data.getTreeExpansions().removeIf(strings -> isParentOfExpansion(expansion, strings));
-		changed();
-	}
-
-	private boolean isParentOfExpansion(String[] parent, String[] child) {
-		if (Arrays.equals(parent, child)) {
-			return true;
-		}
-		for (int i = child.length - parent.length; i > 0; i--) {
-			String[] arr = Arrays.copyOfRange(child, i, child.length);
-			if (Arrays.equals(parent, arr)) {
-				return true;
+			name = "";
+		} else {
+			Collections.sort(files);
+			data.setFiles(files);
+			StringJoiner joiner = new StringJoiner("_");
+			for (Path p : files) {
+				Path fileNamePart = p.getFileName();
+				if (fileNamePart == null) {
+					joiner.add(p.toString());
+					continue;
+				}
+				String fileName = fileNamePart.toString();
+				if (!fileName.endsWith(".jadx.kts")) {
+					joiner.add(CommonFileUtils.removeFileExtension(fileName));
+				}
 			}
+			String joinedName = joiner.toString();
+			name = StringUtils.abbreviate(joinedName, 100);
 		}
-		return false;
+		changed();
+	}
+
+	public void setTreeExpansions(List<String> list) {
+		if (list.equals(data.getTreeExpansionsV2())) {
+			return;
+		}
+		data.setTreeExpansionsV2(list);
+		changed();
+	}
+
+	public List<String> getTreeExpansions() {
+		return data.getTreeExpansionsV2();
 	}
 
 	public JadxCodeData getCodeData() {
@@ -132,7 +152,7 @@ public class JadxProject {
 		changed();
 	}
 
-	public void saveOpenTabs(List<EditorViewState> tabs, int activeTab) {
+	public void saveOpenTabs(List<EditorViewState> tabs) {
 		List<TabViewState> tabStateList = tabs.stream()
 				.map(TabStateViewAdapter::build)
 				.filter(Objects::nonNull)
@@ -140,10 +160,7 @@ public class JadxProject {
 		if (tabStateList.isEmpty()) {
 			return;
 		}
-		boolean dataChanged;
-		dataChanged = data.setOpenTabs(tabStateList);
-		dataChanged |= data.setActiveTab(activeTab);
-		if (dataChanged) {
+		if (data.setOpenTabs(tabStateList)) {
 			changed();
 		}
 	}
@@ -155,35 +172,49 @@ public class JadxProject {
 				.collect(Collectors.toList());
 	}
 
-	public int getActiveTab() {
-		return data.getActiveTab();
+	public Path getMappingsPath() {
+		return data.getMappingsPath();
 	}
 
-	public @NotNull Path getCacheDir() {
-		Path cacheDir = data.getCacheDir();
-		if (cacheDir != null) {
-			return cacheDir;
-		}
-		Path newCacheDir = buildCacheDir();
-		setCacheDir(newCacheDir);
-		return newCacheDir;
-	}
-
-	public void setCacheDir(Path cacheDir) {
-		data.setCacheDir(cacheDir);
+	public void setMappingsPath(Path mappingsPath) {
+		data.setMappingsPath(mappingsPath);
 		changed();
 	}
 
-	private Path buildCacheDir() {
-		if (projectPath != null) {
-			return projectPath.resolveSibling(projectPath.getFileName() + ".cache");
+	/**
+	 * Do not expose options map directly to be able to intercept changes
+	 */
+	public void updatePluginOptions(Consumer<Map<String, String>> update) {
+		update.accept(data.getPluginOptions());
+		changed();
+	}
+
+	public @Nullable String getPluginOption(String key) {
+		return data.getPluginOptions().get(key);
+	}
+
+	private Path cacheDir;
+
+	public Path getCacheDir() {
+		if (cacheDir == null) {
+			cacheDir = resolveCachePath(data.getCacheDir());
 		}
-		List<Path> files = data.getFiles();
-		if (!files.isEmpty()) {
-			Path path = files.get(0);
-			return path.resolveSibling(path.getFileName() + ".cache");
+		return cacheDir;
+	}
+
+	public void resetCacheDir() {
+		cacheDir = resolveCachePath(null);
+	}
+
+	private Path resolveCachePath(@Nullable String cacheDirStr) {
+		CacheManager cacheManager = mainWindow.getCacheManager();
+		Path newCacheDir = cacheManager.getCacheDir(this, cacheDirStr);
+		String newCacheStr = cacheManager.buildCacheDirStr(newCacheDir);
+		if (!newCacheStr.equals(cacheDirStr)) {
+			data.setCacheDir(newCacheStr);
+			changed();
 		}
-		throw new JadxRuntimeException("Failed to build cache dir");
+		return newCacheDir;
 	}
 
 	public boolean isEnableLiveReload() {
@@ -218,9 +249,25 @@ public class JadxProject {
 		changed();
 	}
 
+	public void setSearchResourcesFilter(String searchResourcesFilter) {
+		data.setSearchResourcesFilter(searchResourcesFilter);
+	}
+
+	public String getSearchResourcesFilter() {
+		return data.getSearchResourcesFilter();
+	}
+
+	public void setSearchResourcesSizeLimit(int searchResourcesSizeLimit) {
+		data.setSearchResourcesSizeLimit(searchResourcesSizeLimit);
+	}
+
+	public int getSearchResourcesSizeLimit() {
+		return data.getSearchResourcesSizeLimit();
+	}
+
 	private void changed() {
 		JadxSettings settings = mainWindow.getSettings();
-		if (settings != null && settings.isAutoSaveProject()) {
+		if (settings != null && settings.getSaveOption() == JadxSettings.SAVEOPTION.ALWAYS) {
 			save();
 		} else {
 			saved = false;
@@ -246,6 +293,7 @@ public class JadxProject {
 	}
 
 	public void saveAs(Path path) {
+		mainWindow.getCacheManager().projectPathUpdate(this, path);
 		setProjectPath(path);
 		save();
 	}
@@ -264,13 +312,11 @@ public class JadxProject {
 	}
 
 	public static JadxProject load(MainWindow mainWindow, Path path) {
-		Path basePath = path.toAbsolutePath().getParent();
-		try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+		try {
 			JadxProject project = new JadxProject(mainWindow);
-			project.data = buildGson(basePath).fromJson(reader, ProjectData.class);
+			project.data = loadProjectData(path);
 			project.saved = true;
 			project.setProjectPath(path);
-			project.upgrade();
 			return project;
 		} catch (Exception e) {
 			LOG.error("Error loading project", e);
@@ -278,30 +324,22 @@ public class JadxProject {
 		}
 	}
 
-	private static Gson buildGson(Path basePath) {
-		return new GsonBuilder()
-				.registerTypeHierarchyAdapter(Path.class, new RelativePathTypeAdapter(basePath))
-				.registerTypeAdapter(ICodeComment.class, GsonUtils.interfaceReplace(JadxCodeComment.class))
-				.registerTypeAdapter(ICodeRename.class, GsonUtils.interfaceReplace(JadxCodeRename.class))
-				.registerTypeAdapter(IJavaNodeRef.class, GsonUtils.interfaceReplace(JadxNodeRef.class))
-				.registerTypeAdapter(IJavaCodeRef.class, GsonUtils.interfaceReplace(JadxCodeRef.class))
-				.setPrettyPrinting()
-				.create();
+	public static ProjectData loadProjectData(Path path) {
+		Path basePath = path.toAbsolutePath().getParent();
+		try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+			return buildGson(basePath).fromJson(reader, ProjectData.class);
+		} catch (Exception e) {
+			throw new JadxRuntimeException("Failed to load project file: " + path, e);
+		}
 	}
 
-	private void upgrade() {
-		int fromVersion = data.getProjectVersion();
-		if (fromVersion == CURRENT_PROJECT_VERSION) {
-			return;
-		}
-		LOG.debug("upgrade project settings from version: {} to {}", fromVersion, CURRENT_PROJECT_VERSION);
-		if (fromVersion == 0) {
-			fromVersion++;
-		}
-		if (fromVersion != CURRENT_PROJECT_VERSION) {
-			throw new JadxRuntimeException("Project update failed");
-		}
-		data.setProjectVersion(CURRENT_PROJECT_VERSION);
-		save();
+	private static Gson buildGson(Path basePath) {
+		return defaultGsonBuilder()
+				.registerTypeHierarchyAdapter(Path.class, new RelativePathTypeAdapter(basePath))
+				.registerTypeAdapter(ICodeComment.class, interfaceReplace(JadxCodeComment.class))
+				.registerTypeAdapter(ICodeRename.class, interfaceReplace(JadxCodeRename.class))
+				.registerTypeAdapter(IJavaNodeRef.class, interfaceReplace(JadxNodeRef.class))
+				.registerTypeAdapter(IJavaCodeRef.class, interfaceReplace(JadxCodeRef.class))
+				.create();
 	}
 }

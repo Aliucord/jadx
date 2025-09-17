@@ -1,7 +1,9 @@
 package jadx.gui.ui.popupmenu;
 
 import java.awt.event.ActionEvent;
-import java.util.Arrays;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 import javax.swing.AbstractAction;
@@ -10,7 +12,6 @@ import javax.swing.JMenu;
 import javax.swing.JMenuItem;
 import javax.swing.JPopupMenu;
 
-import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,7 +21,12 @@ import jadx.gui.treemodel.JPackage;
 import jadx.gui.ui.MainWindow;
 import jadx.gui.ui.dialog.ExcludePkgDialog;
 import jadx.gui.ui.dialog.RenameDialog;
+import jadx.gui.ui.dialog.SearchDialog;
+import jadx.gui.ui.filedialog.FileDialogWrapper;
+import jadx.gui.ui.filedialog.FileOpenMode;
 import jadx.gui.utils.NLS;
+import jadx.gui.utils.pkgs.JRenamePackage;
+import jadx.gui.utils.pkgs.PackageHelper;
 
 public class JPackagePopupMenu extends JPopupMenu {
 	private static final long serialVersionUID = -7781009781149224131L;
@@ -34,79 +40,26 @@ public class JPackagePopupMenu extends JPopupMenu {
 
 		add(makeExcludeItem(pkg));
 		add(makeExcludeItem());
-		JMenuItem menuItem = makeRenameMenuItem(pkg);
-		if (menuItem != null) {
-			add(menuItem);
-		}
+		add(makeRenameMenuItem(pkg));
+		add(makeExportSubMenu(pkg));
+		add(makeSearchItem(pkg));
 	}
 
-	@Nullable
 	private JMenuItem makeRenameMenuItem(JPackage pkg) {
-		List<String> aliasShortParts = splitPackage(pkg.getName());
-		int count = aliasShortParts.size();
-		if (count == 0) {
-			return null;
-		}
-		String rawPackage = getRawPackage(pkg);
-		if (rawPackage == null) {
-			return null;
-		}
-		List<String> aliasParts = splitPackage(pkg.getFullName());
-		List<String> rawParts = splitPackage(rawPackage); // can be longer then alias parts
-		int start = aliasParts.size() - count;
-		if (count == 1) {
-			// single case => no submenu
-			JPackage renamePkg = new JPackage(concat(rawParts, start), aliasParts.get(start));
-			JMenuItem pkgItem = new JMenuItem(NLS.str("popup.rename"));
-			pkgItem.addActionListener(e -> rename(renamePkg));
-			return pkgItem;
-		}
 		JMenuItem renameSubMenu = new JMenu(NLS.str("popup.rename"));
-		for (int i = start; i < aliasParts.size(); i++) {
-			String aliasShortPkg = aliasParts.get(i);
-			JPackage pkgPart = new JPackage(concat(rawParts, i), aliasShortPkg);
-			JMenuItem pkgPartItem = new JMenuItem(aliasShortPkg);
-			pkgPartItem.addActionListener(e -> rename(pkgPart));
+		PackageHelper packageHelper = mainWindow.getCacheObject().getPackageHelper();
+		List<JRenamePackage> nodes = packageHelper.getRenameNodes(pkg);
+		for (JRenamePackage node : nodes) {
+			JMenuItem pkgPartItem = new JMenuItem(node.getTitle(), node.getIcon());
+			pkgPartItem.addActionListener(e -> rename(node));
 			renameSubMenu.add(pkgPartItem);
 		}
 		return renameSubMenu;
 	}
 
-	private String concat(List<String> parts, int n) {
-		if (n == 0) {
-			return parts.get(0);
-		}
-		StringBuilder sb = new StringBuilder();
-		sb.append(parts.get(0));
-		int count = parts.size();
-		for (int i = 1; i < count && i <= n; i++) {
-			sb.append('.');
-			sb.append(parts.get(i));
-		}
-		return sb.toString();
-	}
-
-	private void rename(JPackage pkg) {
-		LOG.debug("Renaming package: fullName={}, name={}", pkg.getFullName(), pkg.getName());
+	private void rename(JRenamePackage pkg) {
+		LOG.debug("Renaming package: {}", pkg);
 		RenameDialog.rename(mainWindow, pkg);
-	}
-
-	private List<String> splitPackage(String rawPackage) {
-		return Arrays.asList(rawPackage.split("\\."));
-	}
-
-	private String getRawPackage(JPackage pkg) {
-		List<JClass> classes = pkg.getClasses();
-		if (!classes.isEmpty()) {
-			return classes.get(0).getRootClass().getCls().getClassNode().getClassInfo().getPackage();
-		}
-		for (JPackage innerPkg : pkg.getInnerPackages()) {
-			String rawPackage = getRawPackage(innerPkg);
-			if (rawPackage != null) {
-				return rawPackage;
-			}
-		}
-		return null;
 	}
 
 	private JMenuItem makeExcludeItem(JPackage pkg) {
@@ -114,7 +67,7 @@ public class JPackagePopupMenu extends JPopupMenu {
 		excludeItem.setSelected(!pkg.isEnabled());
 		excludeItem.addItemListener(e -> {
 			JadxWrapper wrapper = mainWindow.getWrapper();
-			String fullName = pkg.getFullName();
+			String fullName = pkg.getPkg().getFullName();
 			if (excludeItem.isSelected()) {
 				wrapper.addExcludedPackage(fullName);
 			} else {
@@ -123,6 +76,52 @@ public class JPackagePopupMenu extends JPopupMenu {
 			mainWindow.reopen();
 		});
 		return excludeItem;
+	}
+
+	private JMenuItem makeExportSubMenu(JPackage pkg) {
+		JMenu exportSubMenu = new JMenu(NLS.str("popup.export"));
+
+		exportSubMenu.add(makeExportMenuItem(pkg, NLS.str("tabs.code"), JClassExportType.Code));
+		exportSubMenu.add(makeExportMenuItem(pkg, NLS.str("tabs.smali"), JClassExportType.Smali));
+		exportSubMenu.add(makeExportMenuItem(pkg, "Simple", JClassExportType.Simple));
+		exportSubMenu.add(makeExportMenuItem(pkg, "Fallback", JClassExportType.Fallback));
+
+		return exportSubMenu;
+	}
+
+	public JMenuItem makeExportMenuItem(JPackage pkg, String label, JClassExportType exportType) {
+		JMenuItem exportMenuItem = new JMenuItem(label);
+		exportMenuItem.addActionListener(event -> {
+			FileDialogWrapper fileDialog = new FileDialogWrapper(mainWindow, FileOpenMode.EXPORT_NODE_FOLDER);
+
+			List<Path> selectedPaths = fileDialog.show();
+			if (selectedPaths.size() != 1) {
+				return;
+			}
+
+			Path savePath = selectedPaths.get(0);
+			saveJPackage(pkg, savePath, exportType);
+		});
+
+		return exportMenuItem;
+	}
+
+	private static void saveJPackage(JPackage pkg, Path savePath, JClassExportType exportType) {
+		Path subSavePath = savePath.resolve(pkg.getName());
+		try {
+			if (!Files.isDirectory(subSavePath)) {
+				Files.createDirectory(subSavePath);
+			}
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+		for (JClass jClass : pkg.getClasses()) {
+			String fileName = jClass.getName() + "." + exportType.extension;
+			JClassPopupMenu.saveJClass(jClass, subSavePath.resolve(fileName), exportType);
+		}
+		for (JPackage subPkg : pkg.getSubPackages()) {
+			saveJPackage(subPkg, subSavePath, exportType);
+		}
 	}
 
 	private JMenuItem makeExcludeItem() {
@@ -134,5 +133,15 @@ public class JPackagePopupMenu extends JPopupMenu {
 				new ExcludePkgDialog(mainWindow).setVisible(true);
 			}
 		});
+	}
+
+	private JMenuItem makeSearchItem(JPackage pkg) {
+		JMenuItem searchItem = new JMenuItem(NLS.str("menu.text_search"));
+		searchItem.addActionListener(e -> {
+			String fullName = pkg.getPkg().getFullName();
+			LOG.debug("Searching package: {}", fullName);
+			SearchDialog.searchPackage(mainWindow, fullName);
+		});
+		return searchItem;
 	}
 }

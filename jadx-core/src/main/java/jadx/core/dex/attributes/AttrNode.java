@@ -2,34 +2,51 @@ package jadx.core.dex.attributes;
 
 import java.util.List;
 
+import jadx.api.CommentsLevel;
 import jadx.api.plugins.input.data.annotations.IAnnotation;
 import jadx.api.plugins.input.data.attributes.IJadxAttrType;
 import jadx.api.plugins.input.data.attributes.IJadxAttribute;
+import jadx.core.Consts;
+import jadx.core.dex.attributes.nodes.JadxCommentsAttr;
+import jadx.core.utils.Utils;
 
 public abstract class AttrNode implements IAttributeNode {
 
-	private static final AttributeStorage EMPTY_ATTR_STORAGE = new EmptyAttrStorage();
+	private static final AttributeStorage EMPTY_ATTR_STORAGE = EmptyAttrStorage.INSTANCE;
 
 	private AttributeStorage storage = EMPTY_ATTR_STORAGE;
 
 	@Override
 	public void add(AFlag flag) {
 		initStorage().add(flag);
+		if (Consts.DEBUG_ATTRIBUTES) {
+			addDebugComment("Add flag " + flag + " at " + Utils.currentStackTrace(2));
+		}
 	}
 
 	@Override
 	public void addAttr(IJadxAttribute attr) {
 		initStorage().add(attr);
+		if (Consts.DEBUG_ATTRIBUTES) {
+			addDebugComment("Add attribute " + attr.getClass().getSimpleName()
+					+ ": " + attr + " at " + Utils.currentStackTrace(2));
+		}
 	}
 
 	@Override
 	public void addAttrs(List<IJadxAttribute> list) {
+		if (list.isEmpty()) {
+			return;
+		}
 		initStorage().add(list);
 	}
 
 	@Override
 	public <T> void addAttr(IJadxAttrType<AttrList<T>> type, T obj) {
 		initStorage().add(type, obj);
+		if (Consts.DEBUG_ATTRIBUTES) {
+			addDebugComment("Add attribute " + obj + " at " + Utils.currentStackTrace(2));
+		}
 	}
 
 	public <T> void addAttr(IJadxAttrType<AttrList<T>> type, List<T> list) {
@@ -122,18 +139,15 @@ public abstract class AttrNode implements IAttributeNode {
 
 	@Override
 	public void clearAttributes() {
-		storage.clear();
-		unloadIfEmpty();
+		storage = EMPTY_ATTR_STORAGE;
 	}
 
-	/**
-	 * Remove all attribute
-	 */
 	public void unloadAttributes() {
 		if (storage == EMPTY_ATTR_STORAGE) {
 			return;
 		}
 		storage.unloadAttributes();
+		storage.clearFlags();
 		unloadIfEmpty();
 	}
 
@@ -150,5 +164,14 @@ public abstract class AttrNode implements IAttributeNode {
 	@Override
 	public boolean isAttrStorageEmpty() {
 		return storage.isEmpty();
+	}
+
+	private void addDebugComment(String msg) {
+		JadxCommentsAttr commentsAttr = get(AType.JADX_COMMENTS);
+		if (commentsAttr == null) {
+			commentsAttr = new JadxCommentsAttr();
+			initStorage().add(commentsAttr);
+		}
+		commentsAttr.add(CommentsLevel.DEBUG, msg);
 	}
 }

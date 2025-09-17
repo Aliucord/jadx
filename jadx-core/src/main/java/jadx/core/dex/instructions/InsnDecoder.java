@@ -3,10 +3,6 @@ package jadx.core.dex.instructions;
 import java.util.List;
 import java.util.Objects;
 
-import org.jetbrains.annotations.NotNull;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import jadx.api.plugins.input.data.ICodeReader;
 import jadx.api.plugins.input.data.IMethodProto;
 import jadx.api.plugins.input.data.IMethodRef;
@@ -15,7 +11,10 @@ import jadx.api.plugins.input.insns.custom.IArrayPayload;
 import jadx.api.plugins.input.insns.custom.ICustomPayload;
 import jadx.api.plugins.input.insns.custom.ISwitchPayload;
 import jadx.core.Consts;
+import jadx.core.dex.attributes.AFlag;
 import jadx.core.dex.attributes.AType;
+import jadx.core.dex.attributes.nodes.CodeFeaturesAttr;
+import jadx.core.dex.attributes.nodes.CodeFeaturesAttr.CodeFeature;
 import jadx.core.dex.attributes.nodes.JadxError;
 import jadx.core.dex.info.FieldInfo;
 import jadx.core.dex.info.MethodInfo;
@@ -23,6 +22,7 @@ import jadx.core.dex.instructions.args.ArgType;
 import jadx.core.dex.instructions.args.InsnArg;
 import jadx.core.dex.instructions.args.LiteralArg;
 import jadx.core.dex.instructions.args.RegisterArg;
+import jadx.core.dex.instructions.java.JsrNode;
 import jadx.core.dex.nodes.FieldNode;
 import jadx.core.dex.nodes.InsnNode;
 import jadx.core.dex.nodes.MethodNode;
@@ -33,8 +33,6 @@ import jadx.core.utils.exceptions.JadxRuntimeException;
 import jadx.core.utils.input.InsnDataUtils;
 
 public class InsnDecoder {
-	private static final Logger LOG = LoggerFactory.getLogger(InsnDecoder.class);
-
 	private final MethodNode method;
 	private final RootNode root;
 
@@ -52,7 +50,7 @@ public class InsnDecoder {
 				rawInsn.decode();
 				insn = decode(rawInsn);
 			} catch (Exception e) {
-				method.addError("Failed to decode insn: " + rawInsn + ", method: " + method, e);
+				method.addError("Failed to decode insn: " + rawInsn, e);
 				insn = new InsnNode(InsnType.NOP, 0);
 				insn.addAttr(AType.JADX_ERROR, new JadxError("decode failed: " + e.getMessage(), e));
 			}
@@ -62,7 +60,6 @@ public class InsnDecoder {
 		return instructions;
 	}
 
-	@NotNull
 	protected InsnNode decode(InsnData insn) throws DecodeException {
 		switch (insn.getOpcode()) {
 			case NOP:
@@ -332,6 +329,16 @@ public class InsnDecoder {
 			case GOTO:
 				return new GotoNode(insn.getTarget());
 
+			case JAVA_JSR:
+				method.add(AFlag.RESOLVE_JAVA_JSR);
+				JsrNode jsr = new JsrNode(insn.getTarget());
+				jsr.setResult(InsnArg.reg(insn, 0, ArgType.UNKNOWN_INT));
+				return jsr;
+
+			case JAVA_RET:
+				method.add(AFlag.RESOLVE_JAVA_JSR);
+				return insn(InsnType.JAVA_RET, null, InsnArg.reg(insn, 0, ArgType.UNKNOWN_INT));
+
 			case THROW:
 				return insn(InsnType.THROW, null, InsnArg.reg(insn, 0, ArgType.THROWABLE));
 
@@ -502,13 +509,14 @@ public class InsnDecoder {
 		}
 	}
 
-	@NotNull
 	private SwitchInsn makeSwitch(InsnData insn, boolean packed) {
 		SwitchInsn swInsn = new SwitchInsn(InsnArg.reg(insn, 0, ArgType.UNKNOWN), insn.getTarget(), packed);
 		ICustomPayload payload = insn.getPayload();
 		if (payload != null) {
 			swInsn.attachSwitchData(new SwitchData((ISwitchPayload) payload), insn.getTarget());
 		}
+		method.add(AFlag.COMPUTE_POST_DOM);
+		CodeFeaturesAttr.add(method, CodeFeature.SWITCH);
 		return swInsn;
 	}
 
@@ -532,6 +540,7 @@ public class InsnDecoder {
 		for (int i = 1; i < regsCount; i++) {
 			newArr.addArg(InsnArg.typeImmutableReg(insn, i, ArgType.INT));
 		}
+		CodeFeaturesAttr.add(method, CodeFeature.NEW_ARRAY);
 		return newArr;
 	}
 

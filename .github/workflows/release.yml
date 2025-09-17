@@ -1,0 +1,92 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+# additional permissions for provided GitHub token to create new release
+permissions:
+  contents: write
+
+jobs:
+  build-release-win-bundle:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up JDK
+        uses: oracle-actions/setup-java@v1
+        with:
+          release: 24
+
+      - name: Set jadx version
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const jadxVersion = context.ref.split('/').pop().substring(1)
+            core.exportVariable('JADX_VERSION', jadxVersion);
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build
+        run: ./gradlew dist -PbundleJRE=true
+
+      - name: Save JRE bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ format('jadx-gui-{0}-with-jre-win', env.JADX_VERSION) }}
+          path: ${{ format('build/distWinWithJre/jadx-gui-{0}-with-jre-win.zip', env.JADX_VERSION) }}
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    needs: build-release-win-bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set jadx version and release name
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const jadxVersion = context.ref.split('/').pop().substring(1)
+            core.exportVariable('JADX_VERSION', jadxVersion);
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build
+        run: ./gradlew dist distWin
+        env:
+          JADX_BUILD_JAVA_VERSION: 11
+
+      - name: Download Windows JRE bundle
+        uses: actions/download-artifact@v5
+        with:
+          name: ${{ format('jadx-gui-{0}-with-jre-win', env.JADX_VERSION) }}
+          path: ${{ format('build/jadx-gui-{0}-with-jre-win', env.JADX_VERSION) }}
+
+      - run: |
+          cd build
+          pwd
+          ls -l
+          ls jadx-gui-*-with-jre-win
+          mv jadx-gui-*-with-jre-win/jadx-gui-*-with-jre-win.zip .
+          mv distWin/jadx-gui-*-win.zip .
+          ls -l *.zip
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ env.JADX_VERSION }}
+          draft: true
+          fail_on_unmatched_files: true
+          files: build/jadx-*.zip

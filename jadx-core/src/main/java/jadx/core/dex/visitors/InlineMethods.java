@@ -15,10 +15,8 @@ import jadx.core.dex.instructions.BaseInvokeNode;
 import jadx.core.dex.instructions.IndexInsnNode;
 import jadx.core.dex.instructions.InsnType;
 import jadx.core.dex.instructions.InvokeNode;
-import jadx.core.dex.instructions.args.ArgType;
 import jadx.core.dex.instructions.args.InsnArg;
 import jadx.core.dex.instructions.args.RegisterArg;
-import jadx.core.dex.instructions.args.SSAVar;
 import jadx.core.dex.nodes.BlockNode;
 import jadx.core.dex.nodes.ClassNode;
 import jadx.core.dex.nodes.FieldNode;
@@ -27,6 +25,7 @@ import jadx.core.dex.nodes.InsnNode;
 import jadx.core.dex.nodes.MethodNode;
 import jadx.core.dex.visitors.typeinference.TypeInferenceVisitor;
 import jadx.core.utils.BlockUtils;
+import jadx.core.utils.InsnRemover;
 import jadx.core.utils.ListUtils;
 import jadx.core.utils.exceptions.JadxException;
 import jadx.core.utils.exceptions.JadxRuntimeException;
@@ -48,7 +47,7 @@ public class InlineMethods extends AbstractVisitor {
 		for (BlockNode block : mth.getBasicBlocks()) {
 			for (InsnNode insn : block.getInstructions()) {
 				if (insn.getType() == InsnType.INVOKE) {
-					processInvokeInsn(mth, block, ((InvokeNode) insn));
+					processInvokeInsn(mth, block, (InvokeNode) insn);
 				}
 			}
 		}
@@ -61,12 +60,17 @@ public class InlineMethods extends AbstractVisitor {
 		}
 		MethodNode callMth = (MethodNode) callMthDetails;
 		try {
-			// TODO: sort inner classes process order by dependencies!
 			MethodInlineAttr mia = MarkMethodsForInline.process(callMth);
 			if (mia == null) {
-				// method not yet loaded => will retry at codegen stage
-				callMth.getParentClass().reloadAtCodegenStage();
-				return;
+				// method is not yet loaded => force process
+				mth.addDebugComment("Class process forced to load method for inline: " + callMth);
+				mth.root().getProcessClasses().forceProcess(callMth.getParentClass());
+				// run check again
+				mia = MarkMethodsForInline.process(callMth);
+				if (mia == null) {
+					mth.addWarnComment("Failed to check method for inline after forced process" + callMth);
+					return;
+				}
 			}
 			if (mia.notNeeded()) {
 				return;
@@ -79,47 +83,65 @@ public class InlineMethods extends AbstractVisitor {
 
 	private void inlineMethod(MethodNode mth, MethodNode callMth, MethodInlineAttr mia, BlockNode block, InvokeNode insn) {
 		InsnNode inlCopy = mia.getInsn().copyWithoutResult();
-		RegisterArg resultArg = insn.getResult();
-		if (resultArg != null) {
-			inlCopy.setResult(resultArg.duplicate());
-		} else if (isAssignNeeded(mia.getInsn(), insn, callMth)) {
-			// add fake result to make correct java expression (see test TestGetterInlineNegative)
-			inlCopy.setResult(makeFakeArg(mth, callMth.getReturnType(), "unused"));
-		}
-		if (!callMth.getMethodInfo().getArgumentsTypes().isEmpty()) {
-			// remap args
-			InsnArg[] regs = new InsnArg[callMth.getRegsCount()];
-			int[] regNums = mia.getArgsRegNums();
-			for (int i = 0; i < regNums.length; i++) {
-				InsnArg arg = insn.getArg(i);
-				regs[regNums[i]] = arg;
+		if (replaceRegs(mth, callMth, mia, insn, inlCopy)) {
+			IMethodDetails methodDetailsAttr = inlCopy.get(AType.METHOD_DETAILS);
+			// replaceInsn replaces the attributes as well, make sure to preserve METHOD_DETAILS
+			if (BlockUtils.replaceInsn(mth, block, insn, inlCopy)) {
+				if (methodDetailsAttr != null) {
+					inlCopy.addAttr(methodDetailsAttr);
+				}
+				updateUsageInfo(mth, callMth, mia.getInsn());
+				return;
 			}
-			// replace args
-			List<RegisterArg> inlArgs = new ArrayList<>();
-			inlCopy.getRegisterArgs(inlArgs);
-			for (RegisterArg r : inlArgs) {
-				int regNum = r.getRegNum();
-				if (regNum >= regs.length) {
-					LOG.warn("Unknown register number {} in method call: {} from {}", r, callMth, mth);
-				} else {
+		}
+		mth.addWarnComment("Failed to inline method: " + callMth);
+		// undo changes to insn
+		InsnRemover.unbindInsn(mth, inlCopy);
+		insn.rebindArgs();
+	}
+
+	private boolean replaceRegs(MethodNode mth, MethodNode callMth, MethodInlineAttr mia, InvokeNode insn, InsnNode inlCopy) {
+		try {
+			if (!callMth.getMethodInfo().getArgumentsTypes().isEmpty()) {
+				// remap args
+				InsnArg[] regs = new InsnArg[callMth.getRegsCount()];
+				int[] regNums = mia.getArgsRegNums();
+				for (int i = 0; i < regNums.length; i++) {
+					InsnArg arg = insn.getArg(i);
+					regs[regNums[i]] = arg;
+				}
+				// replace args
+				List<RegisterArg> inlArgs = new ArrayList<>();
+				inlCopy.getRegisterArgs(inlArgs);
+				for (RegisterArg r : inlArgs) {
+					int regNum = r.getRegNum();
+					if (regNum >= regs.length) {
+						mth.addWarnComment("Unknown register number '" + r + "' in method call: " + callMth);
+						return false;
+					}
 					InsnArg repl = regs[regNum];
 					if (repl == null) {
-						LOG.warn("Not passed register {} in method call: {} from {}", r, callMth, mth);
-					} else {
-						inlCopy.replaceArg(r, repl);
+						mth.addWarnComment("Not passed register '" + r + "' in method call: " + callMth);
+						return false;
+					}
+					if (!inlCopy.replaceArg(r, repl.duplicate())) {
+						mth.addWarnComment("Failed to replace arg " + r + " for method inline: " + callMth);
+						return false;
 					}
 				}
 			}
+			RegisterArg resultArg = insn.getResult();
+			if (resultArg != null) {
+				inlCopy.setResult(resultArg.duplicate());
+			} else if (isAssignNeeded(mia.getInsn(), insn, callMth)) {
+				// add a fake result to make correct java expression (see test TestGetterInlineNegative)
+				inlCopy.setResult(mth.makeSyntheticRegArg(callMth.getReturnType(), "unused"));
+			}
+			return true;
+		} catch (Exception e) {
+			mth.addWarnComment("Method inline failed with exception", e);
+			return false;
 		}
-		IMethodDetails methodDetailsAttr = inlCopy.get(AType.METHOD_DETAILS);
-		if (!BlockUtils.replaceInsn(mth, block, insn, inlCopy)) {
-			mth.addWarnComment("Failed to inline method: " + callMth);
-		}
-		// replaceInsn replaces the attributes as well, make sure to preserve METHOD_DETAILS
-		if (methodDetailsAttr != null) {
-			inlCopy.addAttr(methodDetailsAttr);
-		}
-		updateUsageInfo(mth, callMth, mia.getInsn());
 	}
 
 	private boolean isAssignNeeded(InsnNode inlineInsn, InvokeNode parentInsn, MethodNode callMthNode) {
@@ -133,15 +155,6 @@ public class InlineMethods extends AbstractVisitor {
 			return false;
 		}
 		return !callMthNode.isVoidReturn();
-	}
-
-	private RegisterArg makeFakeArg(MethodNode mth, ArgType varType, String name) {
-		RegisterArg fakeArg = RegisterArg.reg(0, varType);
-		SSAVar ssaVar = mth.makeNewSVar(fakeArg);
-		InitCodeVariables.initCodeVar(ssaVar);
-		fakeArg.setName(name);
-		ssaVar.setType(varType);
-		return fakeArg;
 	}
 
 	private void updateUsageInfo(MethodNode mth, MethodNode inlinedMth, InsnNode insn) {

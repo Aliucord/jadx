@@ -7,6 +7,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import org.intellij.lang.annotations.MagicConstant;
+
+import jadx.api.plugins.input.data.AccessFlags;
 import jadx.core.dex.instructions.args.ArgType;
 
 /**
@@ -16,13 +19,18 @@ public class ClspClass {
 
 	private final ArgType clsType;
 	private final int id;
+	private final int accFlags;
 	private ArgType[] parents;
 	private Map<String, ClspMethod> methodsMap = Collections.emptyMap();
 	private List<ArgType> typeParameters = Collections.emptyList();
 
-	public ClspClass(ArgType clsType, int id) {
+	private final ClspClassSource source;
+
+	public ClspClass(ArgType clsType, int id, int accFlags, ClspClassSource source) {
 		this.clsType = clsType;
 		this.id = id;
+		this.accFlags = accFlags;
+		this.source = source;
 	}
 
 	public String getName() {
@@ -35,6 +43,18 @@ public class ClspClass {
 
 	public int getId() {
 		return id;
+	}
+
+	public int getAccFlags() {
+		return accFlags;
+	}
+
+	public boolean isInterface() {
+		return AccessFlags.hasFlag(accFlags, AccessFlags.INTERFACE);
+	}
+
+	public boolean hasAccFlag(@MagicConstant(flagsFromClass = AccessFlags.class) int flags) {
+		return AccessFlags.hasFlag(accFlags, flags);
 	}
 
 	public ArgType[] getParents() {
@@ -74,6 +94,10 @@ public class ClspClass {
 
 	public void setTypeParameters(List<ArgType> typeParameters) {
 		this.typeParameters = typeParameters;
+	}
+
+	public ClspClassSource getSource() {
+		return this.source;
 	}
 
 	@Override

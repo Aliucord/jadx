@@ -11,6 +11,7 @@ import java.util.Set;
 
 import jadx.api.ICodeInfo;
 import jadx.api.ICodeWriter;
+import jadx.api.JadxArgs;
 import jadx.api.impl.SimpleCodeWriter;
 import jadx.core.utils.StringUtils;
 import jadx.core.xmlgen.entry.ProtoValue;
@@ -42,13 +43,15 @@ public class ResXmlGen {
 
 	private final ResourceStorage resStorage;
 	private final ValuesParser vp;
+	private final ManifestAttributes manifestAttributes;
 
-	public ResXmlGen(ResourceStorage resStorage, ValuesParser vp) {
+	public ResXmlGen(ResourceStorage resStorage, ValuesParser vp, ManifestAttributes manifestAttributes) {
 		this.resStorage = resStorage;
 		this.vp = vp;
+		this.manifestAttributes = manifestAttributes;
 	}
 
-	public List<ResContainer> makeResourcesXml() {
+	public List<ResContainer> makeResourcesXml(JadxArgs args) {
 		Map<String, ICodeWriter> contMap = new HashMap<>();
 		for (ResourceEntry ri : resStorage.getResources()) {
 			if (SKIP_RES_TYPES.contains(ri.getTypeName())) {
@@ -57,7 +60,7 @@ public class ResXmlGen {
 			String fn = getFileName(ri);
 			ICodeWriter cw = contMap.get(fn);
 			if (cw == null) {
-				cw = new SimpleCodeWriter();
+				cw = new SimpleCodeWriter(args);
 				cw.add("<?xml version=\"1.0\" encoding=\"utf-8\"?>");
 				cw.startLine("<resources>");
 				cw.incIndent();
@@ -108,6 +111,7 @@ public class ResXmlGen {
 			String valueStr = vp.decodeValue(ri.getSimpleValue());
 			addSimpleValue(cw, ri.getTypeName(), ri.getTypeName(), "name", ri.getKeyName(), valueStr);
 		} else {
+			boolean skipNamedValues = false;
 			cw.startLine();
 			cw.add('<').add(ri.getTypeName()).add(" name=\"");
 			String itemTag = "item";
@@ -123,6 +127,14 @@ public class ResXmlGen {
 				if (formatValue != null) {
 					cw.add("\" format=\"").add(formatValue);
 				}
+				if (ri.getNamedValues().size() > 1) {
+					for (RawNamedValue rv : ri.getNamedValues()) {
+						if (rv.getNameRef() == ParserConstants.ATTR_MIN) {
+							cw.add("\" min=\"").add(String.valueOf(rv.getRawValue().getData()));
+							skipNamedValues = true;
+						}
+					}
+				}
 			} else {
 				cw.add(ri.getKeyName());
 			}
@@ -135,11 +147,13 @@ public class ResXmlGen {
 			}
 			cw.add("\">");
 
-			cw.incIndent();
-			for (RawNamedValue value : ri.getNamedValues()) {
-				addItem(cw, itemTag, ri.getTypeName(), value);
+			if (!skipNamedValues) {
+				cw.incIndent();
+				for (RawNamedValue value : ri.getNamedValues()) {
+					addItem(cw, itemTag, ri.getTypeName(), value);
+				}
+				cw.decIndent();
 			}
-			cw.decIndent();
 			cw.startLine().add("</").add(ri.getTypeName()).add('>');
 		}
 	}
@@ -179,7 +193,7 @@ public class ResXmlGen {
 			if (dataType == ParserConstants.TYPE_INT_DEC && nameStr != null) {
 				try {
 					int intVal = Integer.parseInt(valueStr);
-					String newVal = ManifestAttributes.getInstance().decode(nameStr.replace("android:", "").replace("attr.", ""), intVal);
+					String newVal = manifestAttributes.decode(nameStr.replace("android:", "").replace("attr.", ""), intVal);
 					if (newVal != null) {
 						valueStr = newVal;
 					}
@@ -190,7 +204,7 @@ public class ResXmlGen {
 			if (dataType == ParserConstants.TYPE_INT_HEX && nameStr != null) {
 				try {
 					int intVal = Integer.decode(valueStr);
-					String newVal = ManifestAttributes.getInstance().decode(nameStr.replace("android:", "").replace("attr.", ""), intVal);
+					String newVal = manifestAttributes.decode(nameStr.replace("android:", "").replace("attr.", ""), intVal);
 					if (newVal != null) {
 						valueStr = newVal;
 					}
@@ -239,11 +253,16 @@ public class ResXmlGen {
 				cw.add(' ').add(attrName).add("=\"").add(attrValue).add('"');
 			}
 		}
-		if (valueStr.equals("")) {
+
+		if (itemTag.equals("string") && valueStr.contains("%") && StringFormattedCheck.hasMultipleNonPositionalSubstitutions(valueStr)) {
+			cw.add(" formatted=\"false\"");
+		}
+
+		if (valueStr.isEmpty()) {
 			cw.add(" />");
 		} else {
 			cw.add('>');
-			if (itemTag.equals("string")) {
+			if (itemTag.equals("string") || (typeName.equals("array") && valueStr.charAt(0) != '@')) {
 				cw.add(StringUtils.escapeResStrValue(valueStr));
 			} else {
 				cw.add(StringUtils.escapeResValue(valueStr));

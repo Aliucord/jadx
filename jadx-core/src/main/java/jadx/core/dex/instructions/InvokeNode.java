@@ -103,6 +103,6 @@ public class InvokeNode extends BaseInvokeNode {
 
 	@Override
 	public String toString() {
-		return super.toString() + " type: " + type + " call: " + mth;
+		return baseString() + " " + type + " call: " + mth + attributesString();
 	}
 }

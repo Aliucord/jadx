@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import jadx.api.CommentsLevel;
 import jadx.api.ICodeWriter;
 import jadx.api.JadxArgs;
+import jadx.api.args.IntegerFormat;
 import jadx.api.metadata.annotations.InsnCodeOffset;
 import jadx.api.metadata.annotations.VarNode;
 import jadx.api.plugins.input.data.AccessFlags;
@@ -21,6 +22,7 @@ import jadx.api.plugins.input.data.attributes.JadxAttrType;
 import jadx.api.plugins.input.data.attributes.types.AnnotationMethodParamsAttr;
 import jadx.core.Consts;
 import jadx.core.Jadx;
+import jadx.core.codegen.utils.CodeGenUtils;
 import jadx.core.dex.attributes.AFlag;
 import jadx.core.dex.attributes.AType;
 import jadx.core.dex.attributes.nodes.JadxError;
@@ -42,7 +44,6 @@ import jadx.core.dex.trycatch.CatchAttr;
 import jadx.core.dex.trycatch.ExceptionHandler;
 import jadx.core.dex.visitors.DepthTraversal;
 import jadx.core.dex.visitors.IDexTreeVisitor;
-import jadx.core.utils.CodeGenUtils;
 import jadx.core.utils.Utils;
 import jadx.core.utils.exceptions.CodegenException;
 import jadx.core.utils.exceptions.JadxOverflowException;
@@ -80,8 +81,9 @@ public class MethodGen {
 
 	public boolean addDefinition(ICodeWriter code) {
 		if (mth.getMethodInfo().isClassInit()) {
+			code.startLine();
 			code.attachDefinition(mth);
-			code.startLine("static");
+			code.add("static");
 			return true;
 		}
 		if (mth.contains(AFlag.ANONYMOUS_CONSTRUCTOR)) {
@@ -268,7 +270,7 @@ public class MethodGen {
 		JadxArgs args = mth.root().getArgs();
 		switch (args.getDecompilationMode()) {
 			case AUTO:
-				if (classGen.isFallbackMode()) {
+				if (classGen.isFallbackMode() || mth.getRegion() == null) {
 					// TODO: try simple mode first
 					dumpInstructions(code);
 				} else {
@@ -548,12 +550,12 @@ public class MethodGen {
 	 * Return fallback variant of method codegen
 	 */
 	public static MethodGen getFallbackMethodGen(MethodNode mth) {
-		ClassGen clsGen = new ClassGen(mth.getParentClass(), null, false, true, true);
+		ClassGen clsGen = new ClassGen(mth.getParentClass(), null, false, true, true, IntegerFormat.AUTO);
 		return new MethodGen(clsGen, mth);
 	}
 
 	public static String getLabelName(BlockNode block) {
-		return String.format("L%d", block.getId());
+		return String.format("L%d", block.getCId());
 	}
 
 	public static String getLabelName(IfNode insn) {

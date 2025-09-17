@@ -1,24 +1,40 @@
 package jadx.core.dex.attributes.nodes;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import jadx.api.CommentsLevel;
 import jadx.api.plugins.input.data.attributes.IJadxAttrType;
 import jadx.api.plugins.input.data.attributes.IJadxAttribute;
 import jadx.core.dex.attributes.AType;
+import jadx.core.dex.attributes.IAttributeNode;
 import jadx.core.utils.Utils;
 
 public class JadxCommentsAttr implements IJadxAttribute {
 
-	private final Map<CommentsLevel, List<String>> comments = new EnumMap<>(CommentsLevel.class);
+	public static void add(IAttributeNode node, CommentsLevel level, String comment) {
+		initFor(node).add(level, comment);
+	}
+
+	private static JadxCommentsAttr initFor(IAttributeNode node) {
+		JadxCommentsAttr currentAttr = node.get(AType.JADX_COMMENTS);
+		if (currentAttr != null) {
+			return currentAttr;
+		}
+		JadxCommentsAttr newAttr = new JadxCommentsAttr();
+		node.addAttr(newAttr);
+		return newAttr;
+	}
+
+	private final Map<CommentsLevel, Set<String>> comments = new EnumMap<>(CommentsLevel.class);
 
 	public void add(CommentsLevel level, String comment) {
-		comments.computeIfAbsent(level, (l) -> new ArrayList<>()).add(comment);
+		comments.computeIfAbsent(level, l -> new HashSet<>()).add(comment);
 	}
 
 	public List<String> formatAndFilter(CommentsLevel level) {
@@ -32,12 +48,11 @@ public class JadxCommentsAttr implements IJadxAttribute {
 					return e.getValue().stream()
 							.map(v -> "JADX " + levelName + ": " + v);
 				})
-				.distinct()
 				.sorted()
 				.collect(Collectors.toList());
 	}
 
-	public Map<CommentsLevel, List<String>> getComments() {
+	public Map<CommentsLevel, Set<String>> getComments() {
 		return comments;
 	}
 

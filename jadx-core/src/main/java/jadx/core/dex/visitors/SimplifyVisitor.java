@@ -72,7 +72,7 @@ public class SimplifyVisitor extends AbstractVisitor {
 				changed = true;
 			}
 		}
-		if (changed) {
+		if (changed || mth.contains(AFlag.REQUEST_CODE_SHRINK)) {
 			CodeShrinkVisitor.shrinkMethod(mth);
 		}
 	}
@@ -113,7 +113,7 @@ public class SimplifyVisitor extends AbstractVisitor {
 				InsnNode wrapInsn = ((InsnWrapArg) arg).getWrapInsn();
 				InsnNode replaceInsn = simplifyInsn(mth, wrapInsn, insn);
 				if (replaceInsn != null) {
-					arg.wrapInstruction(mth, replaceInsn);
+					arg.wrapInstruction(mth, replaceInsn, false);
 					InsnRemover.unbindInsn(mth, wrapInsn);
 					changed = true;
 				}
@@ -121,6 +121,7 @@ public class SimplifyVisitor extends AbstractVisitor {
 		}
 		if (changed) {
 			insn.rebindArgs();
+			mth.add(AFlag.REQUEST_CODE_SHRINK);
 		}
 	}
 
@@ -401,22 +402,24 @@ public class SimplifyVisitor extends AbstractVisitor {
 				}
 			}
 			if (!stringArgFound) {
-				mth.addDebugComment("TODO: convert one arg to string using `String.valueOf()`, args: " + args);
+				String argStr = Utils.listToString(args, InsnArg::toShortString);
+				mth.addDebugComment("TODO: convert one arg to string using `String.valueOf()`, args: " + argStr);
 				return null;
 			}
 
 			// all check passed
-			removeStringBuilderInsns(mth, toStrInsn, chain);
-
 			List<InsnArg> dupArgs = Utils.collectionMap(args, InsnArg::duplicate);
 			List<InsnArg> simplifiedArgs = concatConstArgs(dupArgs);
 			InsnNode concatInsn = new InsnNode(InsnType.STR_CONCAT, simplifiedArgs);
-			concatInsn.setResult(toStrInsn.getResult());
 			concatInsn.add(AFlag.SYNTHETIC);
+			if (toStrInsn.getResult() == null && !toStrInsn.contains(AFlag.WRAPPED)) {
+				// string concat without assign to variable will cause compilation error
+				concatInsn.setResult(mth.makeSyntheticRegArg(ArgType.STRING));
+			} else {
+				concatInsn.setResult(toStrInsn.getResult());
+			}
 			concatInsn.copyAttributesFrom(toStrInsn);
-			concatInsn.remove(AFlag.DONT_GENERATE);
-			concatInsn.remove(AFlag.REMOVE);
-			checkResult(mth, concatInsn);
+			removeStringBuilderInsns(mth, toStrInsn, chain);
 			return concatInsn;
 		} catch (Exception e) {
 			mth.addWarnComment("String concatenation convert failed", e);
@@ -483,17 +486,6 @@ public class SimplifyVisitor extends AbstractVisitor {
 			}
 		}
 		return null;
-	}
-
-	/* String concat without assign to variable will cause compilation error */
-	private static void checkResult(MethodNode mth, InsnNode concatInsn) {
-		if (concatInsn.getResult() == null) {
-			RegisterArg resArg = InsnArg.reg(0, ArgType.STRING);
-			SSAVar ssaVar = mth.makeNewSVar(resArg);
-			InitCodeVariables.initCodeVar(ssaVar);
-			ssaVar.setType(ArgType.STRING);
-			concatInsn.setResult(resArg);
-		}
 	}
 
 	/**
@@ -634,7 +626,9 @@ public class SimplifyVisitor extends AbstractVisitor {
 			for (int i = 1; i < argsCount; i++) {
 				concat.addArg(wrap.getArg(i));
 			}
-			return ArithNode.oneArgOp(ArithOp.ADD, fArg, InsnArg.wrapArg(concat));
+			InsnArg concatArg = InsnArg.wrapArg(concat);
+			concatArg.setType(ArgType.STRING);
+			return ArithNode.oneArgOp(ArithOp.ADD, fArg, concatArg);
 		} catch (Exception e) {
 			LOG.debug("Can't convert field arith insn: {}, mth: {}", insn, mth, e);
 		}

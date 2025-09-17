@@ -7,7 +7,9 @@ import java.util.function.IntConsumer;
 import org.jetbrains.annotations.Nullable;
 
 import jadx.api.JadxArgs;
+import jadx.api.args.IntegerFormat;
 import jadx.core.deobf.NameMapper;
+import jadx.core.utils.exceptions.JadxRuntimeException;
 
 public class StringUtils {
 	private static final StringUtils DEFAULT_INSTANCE = new StringUtils(new JadxArgs());
@@ -19,9 +21,15 @@ public class StringUtils {
 	}
 
 	private final boolean escapeUnicode;
+	private final IntegerFormat integerFormat;
 
 	public StringUtils(JadxArgs args) {
 		this.escapeUnicode = args.isEscapeUnicode();
+		this.integerFormat = args.getIntegerFormat();
+	}
+
+	public IntegerFormat getIntegerFormat() {
+		return integerFormat;
 	}
 
 	public static void visitCodePoints(String str, IntConsumer visitor) {
@@ -278,6 +286,30 @@ public class StringUtils {
 		return count;
 	}
 
+	public static boolean containsChar(String str, char ch) {
+		return str.indexOf(ch) != -1;
+	}
+
+	public static String removeChar(String str, char ch) {
+		int pos = str.indexOf(ch);
+		if (pos == -1) {
+			return str;
+		}
+		StringBuilder sb = new StringBuilder(str.length());
+		int cur = 0;
+		int next = pos;
+		while (true) {
+			sb.append(str, cur, next);
+			cur = next + 1;
+			next = str.indexOf(ch, cur);
+			if (next == -1) {
+				sb.append(str, cur, str.length());
+				break;
+			}
+		}
+		return sb.toString();
+	}
+
 	/**
 	 * returns how many lines does it have between start to pos in content.
 	 */
@@ -336,7 +368,159 @@ public class StringUtils {
 		return WORD_SEPARATORS.indexOf(chr) != -1;
 	}
 
+	public static String removeSuffix(String str, String suffix) {
+		if (str.endsWith(suffix)) {
+			return str.substring(0, str.length() - suffix.length());
+		}
+		return str;
+	}
+
+	public static @Nullable String getPrefix(String str, String delim) {
+		int idx = str.indexOf(delim);
+		if (idx != -1) {
+			return str.substring(0, idx);
+		}
+		return null;
+	}
+
 	public static String getDateText() {
 		return new SimpleDateFormat("HH:mm:ss").format(new Date());
+	}
+
+	private String formatNumber(long number, int bytesLen, boolean cast) {
+		String numStr;
+		if (integerFormat.isHexadecimal()) {
+			String hexStr = Long.toHexString(number);
+			if (number < 0) {
+				// cut leading 'f' for negative numbers to match number type length
+				int len = hexStr.length();
+				numStr = "0x" + hexStr.substring(len - bytesLen * 2, len);
+				// force cast, because unsigned negative numbers are bigger
+				// than signed max value allowed by compiler
+				cast = true;
+			} else {
+				numStr = "0x" + hexStr;
+			}
+		} else {
+			numStr = Long.toString(number);
+		}
+		if (bytesLen == 8 && (number == Long.MIN_VALUE || Math.abs(number) >= Integer.MAX_VALUE)) {
+			// force cast for long values bigger than min/max int
+			// to resolve compiler error: "integer number too large"
+			cast = true;
+		}
+		if (cast) {
+			if (bytesLen == 8) {
+				return numStr + 'L';
+			}
+			return getCastStr(bytesLen) + numStr;
+		}
+		return numStr;
+	}
+
+	private static String getCastStr(int bytesLen) {
+		switch (bytesLen) {
+			case 1:
+				return "(byte) ";
+			case 2:
+				return "(short) ";
+			case 4:
+				return "(int) ";
+			case 8:
+				return "(long) ";
+			default:
+				throw new JadxRuntimeException("Unexpected number type length: " + bytesLen);
+		}
+	}
+
+	public String formatByte(long l, boolean cast) {
+		return formatNumber(l, 1, cast);
+	}
+
+	public String formatShort(long l, boolean cast) {
+		if (integerFormat == IntegerFormat.AUTO) {
+			switch ((short) l) {
+				case Short.MAX_VALUE:
+					return "Short.MAX_VALUE";
+				case Short.MIN_VALUE:
+					return "Short.MIN_VALUE";
+			}
+		}
+		return formatNumber(l, 2, cast);
+	}
+
+	public String formatInteger(long l, boolean cast) {
+		if (integerFormat == IntegerFormat.AUTO) {
+			switch ((int) l) {
+				case Integer.MAX_VALUE:
+					return "Integer.MAX_VALUE";
+				case Integer.MIN_VALUE:
+					return "Integer.MIN_VALUE";
+			}
+		}
+		return formatNumber(l, 4, cast);
+	}
+
+	public String formatLong(long l, boolean cast) {
+		if (integerFormat == IntegerFormat.AUTO) {
+			if (l == Long.MAX_VALUE) {
+				return "Long.MAX_VALUE";
+			}
+			if (l == Long.MIN_VALUE) {
+				return "Long.MIN_VALUE";
+			}
+		}
+		return formatNumber(l, 8, cast);
+	}
+
+	public static String formatDouble(double d) {
+		if (Double.isNaN(d)) {
+			return "Double.NaN";
+		}
+		if (d == Double.NEGATIVE_INFINITY) {
+			return "Double.NEGATIVE_INFINITY";
+		}
+		if (d == Double.POSITIVE_INFINITY) {
+			return "Double.POSITIVE_INFINITY";
+		}
+		if (d == Double.MIN_VALUE) {
+			return "Double.MIN_VALUE";
+		}
+		if (d == Double.MAX_VALUE) {
+			return "Double.MAX_VALUE";
+		}
+		if (d == Double.MIN_NORMAL) {
+			return "Double.MIN_NORMAL";
+		}
+		return Double.toString(d) + 'd';
+	}
+
+	public static String formatFloat(float f) {
+		if (Float.isNaN(f)) {
+			return "Float.NaN";
+		}
+		if (f == Float.NEGATIVE_INFINITY) {
+			return "Float.NEGATIVE_INFINITY";
+		}
+		if (f == Float.POSITIVE_INFINITY) {
+			return "Float.POSITIVE_INFINITY";
+		}
+		if (f == Float.MIN_VALUE) {
+			return "Float.MIN_VALUE";
+		}
+		if (f == Float.MAX_VALUE) {
+			return "Float.MAX_VALUE";
+		}
+		if (f == Float.MIN_NORMAL) {
+			return "Float.MIN_NORMAL";
+		}
+		return Float.toString(f) + 'f';
+	}
+
+	public static String capitalizeFirstChar(String str) {
+		if (isEmpty(str)) {
+			return str;
+		}
+		return Character.toUpperCase(str.charAt(0)) + str.substring(1);
 	}
 }

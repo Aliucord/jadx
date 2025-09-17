@@ -16,11 +16,14 @@ import jadx.gui.utils.NLS;
 
 public class FileDialogWrapper {
 
+	private static final List<String> OPEN_FILES_EXTS = Arrays.asList(
+			"apk", "dex", "jar", "class", "smali", "zip", "aar", "arsc", "jadx.kts", "xapk", "apkm");
+
 	private final MainWindow mainWindow;
 
 	private boolean isOpen;
 	private String title;
-	private List<String> fileExtList;
+	private List<String> fileExtList = new ArrayList<>();
 	private int selectionMode = JFileChooser.FILES_AND_DIRECTORIES;
 	private @Nullable Path currentDir;
 	private @Nullable Path selectedFile;
@@ -60,21 +63,28 @@ public class FileDialogWrapper {
 
 	private void initForMode(FileOpenMode mode) {
 		switch (mode) {
-			case OPEN:
 			case OPEN_PROJECT:
+				title = NLS.str("file.open_title");
+				fileExtList = Collections.singletonList(JadxProject.PROJECT_EXTENSION);
+				selectionMode = JFileChooser.FILES_AND_DIRECTORIES;
+				currentDir = mainWindow.getSettings().getLastOpenFilePath();
+				isOpen = true;
+				break;
+
+			case OPEN:
+				title = NLS.str("file.open_title");
+				fileExtList = new ArrayList<>(OPEN_FILES_EXTS);
+				fileExtList.add(JadxProject.PROJECT_EXTENSION);
+				fileExtList.add("aab");
+				selectionMode = JFileChooser.FILES_AND_DIRECTORIES;
+				currentDir = mainWindow.getSettings().getLastOpenFilePath();
+				isOpen = true;
+				break;
+
 			case ADD:
-				if (mode == FileOpenMode.OPEN_PROJECT) {
-					fileExtList = Collections.singletonList(JadxProject.PROJECT_EXTENSION);
-					title = NLS.str("file.open_title");
-				} else {
-					fileExtList = new ArrayList<>(Arrays.asList("apk", "dex", "jar", "class", "smali", "zip", "xapk", "aar", "arsc"));
-					if (mode == FileOpenMode.OPEN) {
-						fileExtList.addAll(Arrays.asList(JadxProject.PROJECT_EXTENSION, "aab"));
-						title = NLS.str("file.open_title");
-					} else {
-						title = NLS.str("file.add_files_action");
-					}
-				}
+				title = NLS.str("file.add_files_action");
+				fileExtList = new ArrayList<>(OPEN_FILES_EXTS);
+				fileExtList.add("aab");
 				selectionMode = JFileChooser.FILES_AND_DIRECTORIES;
 				currentDir = mainWindow.getSettings().getLastOpenFilePath();
 				isOpen = true;
@@ -104,6 +114,20 @@ public class FileDialogWrapper {
 			case CUSTOM_OPEN:
 				isOpen = true;
 				currentDir = mainWindow.getSettings().getLastOpenFilePath();
+				break;
+
+			case EXPORT_NODE:
+				isOpen = false;
+				title = NLS.str("file.export_node");
+				currentDir = mainWindow.getSettings().getLastSaveFilePath();
+				selectionMode = JFileChooser.FILES_ONLY;
+				break;
+
+			case EXPORT_NODE_FOLDER:
+				isOpen = true;
+				title = NLS.str("file.save_all_msg");
+				currentDir = mainWindow.getSettings().getLastSaveFilePath();
+				selectionMode = JFileChooser.DIRECTORIES_ONLY;
 				break;
 		}
 	}

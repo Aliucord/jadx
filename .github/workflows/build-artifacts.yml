@@ -8,24 +8,27 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Set up JDK
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v5
         with:
-          distribution: 'adopt'
-          java-version: 8
+          distribution: temurin
+          java-version: 21
 
       - name: Set jadx version
         run: |
-          JADX_LAST_TAG=$(git describe --abbrev=0 --tags)
-          JADX_VERSION="${JADX_LAST_TAG:1}.$GITHUB_RUN_NUMBER-${GITHUB_SHA:0:8}"
+          JADX_REV=$(git rev-list --count HEAD)
+          JADX_VERSION="r${JADX_REV}.${GITHUB_SHA:0:7}"
           echo "JADX_VERSION=$JADX_VERSION" >> $GITHUB_ENV
 
-      - uses: burrunan/gradle-cache-action@v1
-        name: Build with Gradle
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build
+        run: ./gradlew dist distWin
         env:
           TERM: dumb
           MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
@@ -34,34 +37,35 @@ jobs:
           arguments: clean dist copyExe publish
 
       - name: Save bundle artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ format('jadx-{0}', env.JADX_VERSION) }}
           # Waiting fix for https://github.com/actions/upload-artifact/issues/39 to upload zip file
           # Upload unpacked files for now
           path: build/jadx/**/*
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 14
 
-      - name: Save exe artifact
-        uses: actions/upload-artifact@v3
+      - name: Save Windows bundle artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ format('jadx-gui-{0}-no-jre-win.exe', env.JADX_VERSION) }}
-          path: build/*.exe
+          name: ${{ format('jadx-gui-{0}-no-jre-win', env.JADX_VERSION) }}
+          # Upload unpacked files for now
+          path: jadx-gui/build/jadx-gui-win/*
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 14
 
   build-win-bundle:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Set up JDK
         uses: oracle-actions/setup-java@v1
         with:
-          release: 17
+          release: 24
 
       - name: Print Java version
         shell: bash
@@ -70,21 +74,21 @@ jobs:
       - name: Set jadx version
         shell: bash
         run: |
-          JADX_LAST_TAG=$(git describe --abbrev=0 --tags)
-          JADX_VERSION="${JADX_LAST_TAG:1}.$GITHUB_RUN_NUMBER-${GITHUB_SHA:0:8}"
+          JADX_REV=$(git rev-list --count HEAD)
+          JADX_VERSION="r${JADX_REV}.${GITHUB_SHA:0:7}"
           echo "JADX_VERSION=$JADX_VERSION" >> $GITHUB_ENV
 
-      - uses: gradle/gradle-build-action@v2
-        name: Build with Gradle
-        env:
-          TERM: dumb
-        with:
-          arguments: clean dist -PbundleJRE=true
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
-      - name: Save exe bundle artifact
-        uses: actions/upload-artifact@v3
+      - name: Build
+        run: ./gradlew dist -PbundleJRE=true
+
+      - name: Save Windows with JRE bundle artifact
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ format('jadx-gui-{0}-with-jre-win', env.JADX_VERSION) }}
-          path: jadx-gui/build/*-with-jre-win/*
+          # Upload unpacked files for now
+          path: jadx-gui/build/jadx-gui-with-jre-win/*
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 14

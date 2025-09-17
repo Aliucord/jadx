@@ -5,7 +5,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
-import jadx.api.ICodeWriter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import jadx.core.Consts;
 import jadx.core.dex.attributes.AFlag;
 import jadx.core.dex.info.MethodInfo;
@@ -28,6 +30,7 @@ import jadx.core.dex.visitors.methods.MutableMethodDetails;
 import jadx.core.dex.visitors.shrink.CodeShrinkVisitor;
 import jadx.core.dex.visitors.typeinference.TypeCompare;
 import jadx.core.dex.visitors.typeinference.TypeCompareEnum;
+import jadx.core.utils.InsnUtils;
 import jadx.core.utils.Utils;
 import jadx.core.utils.exceptions.JadxRuntimeException;
 
@@ -43,6 +46,8 @@ import jadx.core.utils.exceptions.JadxRuntimeException;
 		}
 )
 public class MethodInvokeVisitor extends AbstractVisitor {
+	private static final Logger LOG = LoggerFactory.getLogger(MethodInvokeVisitor.class);
+
 	private RootNode root;
 
 	@Override
@@ -116,7 +121,8 @@ public class MethodInvokeVisitor extends AbstractVisitor {
 		int argsOffset = invokeInsn.getFirstArgOffset();
 		List<ArgType> compilerVarTypes = collectCompilerVarTypes(invokeInsn, argsOffset);
 		List<ArgType> castTypes = searchCastTypes(parentMth, effectiveMthDetails, effectiveOverloadMethods, compilerVarTypes);
-		applyArgsCast(invokeInsn, argsOffset, compilerVarTypes, castTypes);
+		List<ArgType> resultCastTypes = expandTypes(parentMth, effectiveMthDetails, castTypes);
+		applyArgsCast(invokeInsn, argsOffset, compilerVarTypes, resultCastTypes);
 	}
 
 	/**
@@ -180,7 +186,13 @@ public class MethodInvokeVisitor extends AbstractVisitor {
 					if (arg.isLiteral() && compilerType.isPrimitive() && castType.isPrimitive()) {
 						arg.setType(castType);
 						arg.add(AFlag.EXPLICIT_PRIMITIVE_TYPE);
+					} else if (InsnUtils.isWrapped(arg, InsnType.CHECK_CAST)) {
+						IndexInsnNode wrapInsn = (IndexInsnNode) ((InsnWrapArg) arg).getWrapInsn();
+						wrapInsn.updateIndex(castType);
 					} else {
+						if (Consts.DEBUG_TYPE_INFERENCE) {
+							LOG.info("Insert cast for invoke insn arg: {}, insn: {}", arg, invokeInsn);
+						}
 						InsnNode castInsn = new IndexInsnNode(InsnType.CAST, castType, 1);
 						castInsn.addArg(arg);
 						castInsn.add(AFlag.EXPLICIT_CAST);
@@ -243,7 +255,7 @@ public class MethodInvokeVisitor extends AbstractVisitor {
 
 	private List<ArgType> searchCastTypes(MethodNode parentMth, IMethodDetails mthDetails, List<IMethodDetails> overloadedMethods,
 			List<ArgType> compilerVarTypes) {
-		// try compile types
+		// try compiler types
 		if (isOverloadResolved(mthDetails, overloadedMethods, compilerVarTypes)) {
 			return compilerVarTypes;
 		}
@@ -277,10 +289,10 @@ public class MethodInvokeVisitor extends AbstractVisitor {
 		if (Consts.DEBUG_OVERLOADED_CASTS) {
 			// TODO: try to minimize casts count
 			parentMth.addDebugComment("Failed to find minimal casts for resolve overloaded methods, cast all args instead"
-					+ ICodeWriter.NL + " method: " + mthDetails
-					+ ICodeWriter.NL + " arg types: " + compilerVarTypes
-					+ ICodeWriter.NL + " candidates:"
-					+ ICodeWriter.NL + "  " + Utils.listToString(overloadedMethods, ICodeWriter.NL + "  "));
+					+ "\n method: " + mthDetails
+					+ "\n arg types: " + compilerVarTypes
+					+ "\n candidates:"
+					+ "\n  " + Utils.listToString(overloadedMethods, "\n  "));
 		}
 		// not resolved -> cast all args
 		return mthDetails.getArgTypes();
@@ -298,6 +310,27 @@ public class MethodInvokeVisitor extends AbstractVisitor {
 			}
 		}
 		return changed;
+	}
+
+	/**
+	 * Use generified types if available
+	 */
+	private List<ArgType> expandTypes(MethodNode parentMth, IMethodDetails methodDetails, List<ArgType> castTypes) {
+		TypeCompare typeCompare = parentMth.root().getTypeCompare();
+		List<ArgType> mthArgTypes = methodDetails.getArgTypes();
+		int argsCount = castTypes.size();
+		List<ArgType> list = new ArrayList<>(argsCount);
+		for (int i = 0; i < argsCount; i++) {
+			ArgType mthType = mthArgTypes.get(i);
+			ArgType castType = castTypes.get(i);
+			TypeCompareEnum result = typeCompare.compareTypes(mthType, castType);
+			if (result == TypeCompareEnum.NARROW_BY_GENERIC) {
+				list.add(mthType);
+			} else {
+				list.add(castType);
+			}
+		}
+		return list;
 	}
 
 	private boolean isOverloadResolved(IMethodDetails expectedMthDetails, List<IMethodDetails> overloadedMethods, List<ArgType> castTypes) {
@@ -387,12 +420,22 @@ public class MethodInvokeVisitor extends AbstractVisitor {
 		}
 		if (arg instanceof InsnWrapArg) {
 			InsnWrapArg wrapArg = (InsnWrapArg) arg;
-			InsnNode wrapInsn = wrapArg.getWrapInsn();
-			if (wrapInsn.getResult() != null) {
-				return wrapInsn.getResult().getType();
-			}
-			return arg.getType();
+			return getInsnCompilerType(arg, wrapArg.getWrapInsn());
 		}
 		throw new JadxRuntimeException("Unknown var type for: " + arg);
+	}
+
+	private static ArgType getInsnCompilerType(InsnArg arg, InsnNode insn) {
+		switch (insn.getType()) {
+			case CAST:
+			case CHECK_CAST:
+				return ((IndexInsnNode) insn).getIndexAsType();
+
+			default:
+				if (insn.getResult() != null) {
+					return insn.getResult().getType();
+				}
+				return arg.getType();
+		}
 	}
 }

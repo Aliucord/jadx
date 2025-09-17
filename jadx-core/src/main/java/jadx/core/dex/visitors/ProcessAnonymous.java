@@ -43,9 +43,7 @@ public class ProcessAnonymous extends AbstractVisitor {
 		if (!inlineAnonymousClasses) {
 			return;
 		}
-		for (ClassNode cls : root.getClasses()) {
-			markAnonymousClass(cls);
-		}
+		root.getClasses().forEach(ProcessAnonymous::processClass);
 		mergeAnonymousDeps(root);
 	}
 
@@ -59,8 +57,16 @@ public class ProcessAnonymous extends AbstractVisitor {
 	}
 
 	private void visitClassAndInners(ClassNode cls) {
-		markAnonymousClass(cls);
+		processClass(cls);
 		cls.getInnerClasses().forEach(this::visitClassAndInners);
+	}
+
+	private static void processClass(ClassNode cls) {
+		try {
+			markAnonymousClass(cls);
+		} catch (Throwable e) {
+			cls.addError("Anonymous visitor error", e);
+		}
 	}
 
 	private static void markAnonymousClass(ClassNode cls) {
@@ -273,6 +279,10 @@ public class ProcessAnonymous extends AbstractVisitor {
 		if (!ctrUseMth.getMethodInfo().isClassInit()) {
 			return false;
 		}
+		if (cls.getUseInMth().isEmpty()) {
+			// no outside usage, inline not needed
+			return false;
+		}
 		FieldNode instFld = ListUtils.filterOnlyOne(cls.getFields(),
 				f -> f.getAccessFlags().containsFlags(AccessFlags.PUBLIC, AccessFlags.STATIC, AccessFlags.FINAL)
 						&& f.getFieldInfo().getType().equals(cls.getClassInfo().getType()));
@@ -359,5 +369,10 @@ public class ProcessAnonymous extends AbstractVisitor {
 			}
 		}
 		return null;
+	}
+
+	@Override
+	public String getName() {
+		return "ProcessAnonymous";
 	}
 }

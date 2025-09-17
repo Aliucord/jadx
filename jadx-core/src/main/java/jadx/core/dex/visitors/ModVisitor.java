@@ -1,5 +1,6 @@
 package jadx.core.dex.visitors;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -13,6 +14,7 @@ import jadx.api.plugins.input.data.annotations.EncodedType;
 import jadx.api.plugins.input.data.annotations.EncodedValue;
 import jadx.api.plugins.input.data.annotations.IAnnotation;
 import jadx.api.plugins.input.data.attributes.JadxAttrType;
+import jadx.api.plugins.input.data.attributes.types.AnnotationMethodParamsAttr;
 import jadx.api.plugins.input.data.attributes.types.AnnotationsAttr;
 import jadx.core.dex.attributes.AFlag;
 import jadx.core.dex.attributes.AType;
@@ -43,6 +45,7 @@ import jadx.core.dex.instructions.mods.TernaryInsn;
 import jadx.core.dex.nodes.BlockNode;
 import jadx.core.dex.nodes.ClassNode;
 import jadx.core.dex.nodes.FieldNode;
+import jadx.core.dex.nodes.IFieldInfoRef;
 import jadx.core.dex.nodes.IMethodDetails;
 import jadx.core.dex.nodes.InsnNode;
 import jadx.core.dex.nodes.MethodNode;
@@ -58,6 +61,7 @@ import jadx.core.utils.exceptions.JadxException;
 import jadx.core.utils.exceptions.JadxRuntimeException;
 
 import static jadx.core.utils.BlockUtils.replaceInsn;
+import static jadx.core.utils.ListUtils.allMatch;
 
 /**
  * Visitor for modify method instructions
@@ -137,6 +141,11 @@ public class ModVisitor extends AbstractVisitor {
 
 					case ARITH:
 						processArith(mth, parentClass, (ArithNode) insn);
+						break;
+
+					case CMP_L:
+					case CMP_G:
+						inlineCMPInsns(mth, block, i, insn, remover);
 						break;
 
 					case CHECK_CAST:
@@ -232,10 +241,10 @@ public class ModVisitor extends AbstractVisitor {
 		int[] keys = insn.getKeys();
 		int len = keys.length;
 		for (int k = 0; k < len; k++) {
-			FieldNode f = parentClass.getConstField(keys[k]);
+			IFieldInfoRef f = parentClass.getConstField(keys[k]);
 			if (f != null) {
 				insn.modifyKey(k, f);
-				f.addUseIn(mth);
+				addFieldUsage(f, mth);
 			}
 		}
 	}
@@ -271,12 +280,27 @@ public class ModVisitor extends AbstractVisitor {
 		if (cls.root().getArgs().isReplaceConsts()) {
 			replaceConstsInAnnotationForAttrNode(cls, cls);
 			cls.getFields().forEach(f -> replaceConstsInAnnotationForAttrNode(cls, f));
-			cls.getMethods().forEach(m -> replaceConstsInAnnotationForAttrNode(cls, m));
+			cls.getMethods().forEach((m) -> {
+				replaceConstsInAnnotationForAttrNode(cls, m);
+				replaceConstsInAnnotationForMethodParamsAttr(cls, m);
+			});
 		}
+	}
+
+	private void replaceConstsInAnnotationForMethodParamsAttr(ClassNode cls, MethodNode m) {
+		AnnotationMethodParamsAttr paramsAnnotation = m.get(JadxAttrType.ANNOTATION_MTH_PARAMETERS);
+		if (paramsAnnotation == null) {
+			return;
+		}
+		paramsAnnotation.getParamList().forEach(annotationsList -> replaceConstsInAnnotationsAttr(cls, annotationsList));
 	}
 
 	private void replaceConstsInAnnotationForAttrNode(ClassNode parentCls, AttrNode attrNode) {
 		AnnotationsAttr annotationsList = attrNode.get(JadxAttrType.ANNOTATION_LIST);
+		replaceConstsInAnnotationsAttr(parentCls, annotationsList);
+	}
+
+	private void replaceConstsInAnnotationsAttr(ClassNode parentCls, AnnotationsAttr annotationsList) {
 		if (annotationsList == null) {
 			return;
 		}
@@ -306,7 +330,7 @@ public class ModVisitor extends AbstractVisitor {
 			}
 			return new EncodedValue(EncodedType.ENCODED_ARRAY, listVal);
 		}
-		FieldNode constField = parentCls.getConstField(encodedValue.getValue());
+		IFieldInfoRef constField = parentCls.getConstField(encodedValue.getValue());
 		if (constField != null) {
 			return new EncodedValue(EncodedType.ENCODED_FIELD, constField.getFieldInfo());
 		}
@@ -314,7 +338,7 @@ public class ModVisitor extends AbstractVisitor {
 	}
 
 	private static void replaceConst(MethodNode mth, ClassNode parentClass, BlockNode block, int i, InsnNode insn) {
-		FieldNode f;
+		IFieldInfoRef f;
 		if (insn.getType() == InsnType.CONST_STR) {
 			String s = ((ConstStringNode) insn).getString();
 			f = parentClass.getConstField(s);
@@ -328,7 +352,7 @@ public class ModVisitor extends AbstractVisitor {
 			InsnNode inode = new IndexInsnNode(InsnType.SGET, f.getFieldInfo(), 0);
 			inode.setResult(insn.getResult());
 			replaceInsn(mth, block, i, inode);
-			f.addUseIn(mth);
+			addFieldUsage(f, mth);
 		}
 	}
 
@@ -338,13 +362,34 @@ public class ModVisitor extends AbstractVisitor {
 		}
 		InsnArg litArg = arithNode.getArg(1);
 		if (litArg.isLiteral()) {
-			FieldNode f = parentClass.getConstFieldByLiteralArg((LiteralArg) litArg);
+			IFieldInfoRef f = parentClass.getConstFieldByLiteralArg((LiteralArg) litArg);
 			if (f != null) {
 				InsnNode fGet = new IndexInsnNode(InsnType.SGET, f.getFieldInfo(), 0);
 				if (arithNode.replaceArg(litArg, InsnArg.wrapArg(fGet))) {
-					f.addUseIn(mth);
+					addFieldUsage(f, mth);
 				}
 			}
+		}
+	}
+
+	/**
+	 * Inline CMP instructions into 'if' to help conditions merging
+	 */
+	private static void inlineCMPInsns(MethodNode mth, BlockNode block, int i, InsnNode insn, InsnRemover remover) {
+		RegisterArg resArg = insn.getResult();
+		List<RegisterArg> useList = resArg.getSVar().getUseList();
+		if (allMatch(useList, use -> InsnUtils.isInsnType(use.getParentInsn(), InsnType.IF))) {
+			for (RegisterArg useArg : new ArrayList<>(useList)) {
+				InsnNode useInsn = useArg.getParentInsn();
+				if (useInsn != null) {
+					InsnArg wrapArg = InsnArg.wrapInsnIntoArg(insn.copyWithoutResult());
+					if (!useInsn.replaceArg(useArg, wrapArg)) {
+						mth.addWarnComment("Failed to inline CMP insn: " + insn + " into " + useInsn);
+						return;
+					}
+				}
+			}
+			remover.addAndUnbind(insn);
 		}
 	}
 
@@ -361,6 +406,11 @@ public class ModVisitor extends AbstractVisitor {
 
 	private static void removeCheckCast(MethodNode mth, BlockNode block, int i, IndexInsnNode insn) {
 		InsnArg castArg = insn.getArg(0);
+		if (castArg.isZeroLiteral()) {
+			// always keep cast for 'null'
+			insn.add(AFlag.EXPLICIT_CAST);
+			return;
+		}
 		ArgType castType = (ArgType) insn.getIndex();
 		if (!ArgType.isCastNeeded(mth.root(), castArg.getType(), castType)) {
 			RegisterArg result = insn.getResult();
@@ -531,15 +581,15 @@ public class ModVisitor extends AbstractVisitor {
 
 		List<LiteralArg> list = insn.getLiteralArgs(elType);
 		InsnNode filledArr = new FilledNewArrayNode(elType, list.size());
-		filledArr.setResult(newArrayNode.getResult());
+		filledArr.setResult(newArrayNode.getResult().duplicate());
 		for (LiteralArg arg : list) {
-			FieldNode f = mth.getParentClass().getConstFieldByLiteralArg(arg);
+			IFieldInfoRef f = mth.getParentClass().getConstFieldByLiteralArg(arg);
 			if (f != null) {
 				InsnNode fGet = new IndexInsnNode(InsnType.SGET, f.getFieldInfo(), 0);
 				filledArr.addArg(InsnArg.wrapArg(fGet));
-				f.addUseIn(mth);
+				addFieldUsage(f, mth);
 			} else {
-				filledArr.addArg(arg);
+				filledArr.addArg(arg.duplicate());
 			}
 		}
 		return filledArr;
@@ -573,5 +623,11 @@ public class ModVisitor extends AbstractVisitor {
 			replaceInsn(mth, block, 0, moveInsn);
 		}
 		block.copyAttributeFrom(insn, AType.CODE_COMMENTS); // save comment
+	}
+
+	public static void addFieldUsage(IFieldInfoRef fieldData, MethodNode mth) {
+		if (fieldData instanceof FieldNode) {
+			((FieldNode) fieldData).addUseIn(mth);
+		}
 	}
 }

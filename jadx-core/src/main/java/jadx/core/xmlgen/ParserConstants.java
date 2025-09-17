@@ -12,7 +12,7 @@ public class ParserConstants {
 	protected static final String ANDROID_NS_VALUE = "android";
 
 	/**
-	 * Chunk types
+	 * Chunk types as defined in frameworks/base/libs/androidfw/include/androidfw/ResourceTypes.h (AOSP)
 	 */
 	protected static final int RES_NULL_TYPE = 0x0000;
 	protected static final int RES_STRING_POOL_TYPE = 0x0001;
@@ -145,7 +145,19 @@ public class ParserConstants {
 	protected static final int SORTED_FLAG = 1;
 	protected static final int UTF8_FLAG = 1 << 8;
 
+	/**
+	 * ResTable_type
+	 */
 	protected static final int NO_ENTRY = 0xFFFFFFFF;
+
+	// If set, the entry is sparse, and encodes both the entry ID and offset into each entry,
+	// and a binary search is used to find the key. Only available on platforms >= O.
+	// Mark any types that use this with a v26 qualifier to prevent runtime issues on older
+	// platforms.
+	protected static final int FLAG_SPARSE = 0x01;
+	// If set, the offsets to the entries are encoded in 16-bit, real_offset = offset * 4u
+	// An 16-bit offset of 0xffffu means a NO_ENTRY
+	protected static final int FLAG_OFFSET16 = 0x02;
 
 	/**
 	 * ResTable_entry
@@ -155,9 +167,12 @@ public class ParserConstants {
 	protected static final int FLAG_COMPLEX = 0x0001;
 	// If set, this resource has been declared public, so libraries are allowed to reference it.
 	protected static final int FLAG_PUBLIC = 0x0002;
-	// If set, this is a weak resource and may be overriden by strong resources of the same name/type.
+	// If set, this is a weak resource and may be overridden by strong resources of the same name/type.
 	// This is only useful during linking with other resource tables.
 	protected static final int FLAG_WEAK = 0x0004;
+	// If set, this is a compact entry with data type and value directly
+	// encoded in the entry, see ResTable_entry::compact
+	protected static final int FLAG_COMPACT = 0x0008;
 
 	/**
 	 * ResTable_map

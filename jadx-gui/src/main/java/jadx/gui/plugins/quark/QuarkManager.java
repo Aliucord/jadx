@@ -14,11 +14,14 @@ import javax.swing.JOptionPane;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import ch.qos.logback.classic.Level;
+
+import jadx.commons.app.JadxSystemInfo;
 import jadx.core.utils.exceptions.JadxRuntimeException;
 import jadx.gui.jobs.BackgroundExecutor;
+import jadx.gui.logs.LogOptions;
 import jadx.gui.treemodel.JRoot;
 import jadx.gui.ui.MainWindow;
-import jadx.gui.utils.SystemInfo;
 import jadx.gui.utils.UiUtils;
 
 public class QuarkManager {
@@ -111,7 +114,7 @@ public class QuarkManager {
 			root.replaceCustomNode(quarkNode);
 			root.update();
 			mainWindow.reloadTree();
-			mainWindow.getTabbedPane().showNode(quarkNode);
+			mainWindow.getTabsController().selectTab(quarkNode);
 		} catch (Exception e) {
 			UiUtils.errorMessage(mainWindow, "Failed to load Quark report.");
 			LOG.error("Failed to load Quark report.", e);
@@ -129,7 +132,7 @@ public class QuarkManager {
 			}
 		}
 		List<String> cmd = new ArrayList<>();
-		if (SystemInfo.IS_WINDOWS) {
+		if (JadxSystemInfo.IS_WINDOWS) {
 			cmd.add("python");
 			cmd.add("-m");
 			cmd.add("venv");
@@ -148,6 +151,7 @@ public class QuarkManager {
 		List<String> cmd = new ArrayList<>();
 		cmd.add(getCommand("pip3"));
 		cmd.add("install");
+		cmd.add("setuptools");
 		cmd.add("quark-engine");
 		cmd.add("--upgrade");
 		try {
@@ -193,19 +197,26 @@ public class QuarkManager {
 	}
 
 	private Path getVenvPath(String cmd) {
-		if (SystemInfo.IS_WINDOWS) {
+		if (JadxSystemInfo.IS_WINDOWS) {
 			return VENV_PATH.resolve("Scripts").resolve(cmd + ".exe");
 		}
 		return VENV_PATH.resolve("bin").resolve(cmd);
 	}
 
 	private void runCommand(List<String> cmd) throws Exception {
-		LOG.debug("Running command: {}", String.join(" ", cmd));
-		Process process = Runtime.getRuntime().exec(cmd.toArray(new String[0]));
+		mainWindow.showLogViewer(LogOptions.forLevel(Level.INFO));
+		LOG.info("Running command: {}", String.join(" ", cmd));
+		ProcessBuilder builder = new ProcessBuilder(cmd);
+		builder.redirectErrorStream(true);
+		Process process = builder.start();
 		try (BufferedReader buf = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-			buf.lines().forEach(msg -> LOG.debug("# {}", msg));
+			buf.lines().forEach(msg -> LOG.info("# {}", msg));
 		} finally {
 			process.waitFor();
+		}
+		if (process.exitValue() != 0) {
+			throw new RuntimeException("Execution failed (exit code " + process.exitValue() + ") - command "
+					+ String.join(" ", cmd) + "\nPlease see command log output what was going wrong.");
 		}
 	}
 

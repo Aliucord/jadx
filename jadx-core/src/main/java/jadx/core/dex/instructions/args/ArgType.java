@@ -34,7 +34,9 @@ public abstract class ArgType {
 	public static final ArgType STRING = objectNoCache(Consts.CLASS_STRING);
 	public static final ArgType ENUM = objectNoCache(Consts.CLASS_ENUM);
 	public static final ArgType THROWABLE = objectNoCache(Consts.CLASS_THROWABLE);
+	public static final ArgType ERROR = objectNoCache(Consts.CLASS_ERROR);
 	public static final ArgType EXCEPTION = objectNoCache(Consts.CLASS_EXCEPTION);
+	public static final ArgType RUNTIME_EXCEPTION = objectNoCache(Consts.CLASS_RUNTIME_EXCEPTION);
 	public static final ArgType OBJECT_ARRAY = array(OBJECT);
 	public static final ArgType WILDCARD = wildcard();
 
@@ -68,6 +70,8 @@ public abstract class ArgType {
 	public static final ArgType INT_FLOAT = unknown(PrimitiveType.INT, PrimitiveType.FLOAT);
 	public static final ArgType INT_BOOLEAN = unknown(PrimitiveType.INT, PrimitiveType.BOOLEAN);
 	public static final ArgType BYTE_BOOLEAN = unknown(PrimitiveType.BYTE, PrimitiveType.BOOLEAN);
+
+	public static final ArgType UNKNOWN_INT = unknown(PrimitiveType.INT);
 
 	protected int hash;
 

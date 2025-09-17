@@ -215,12 +215,24 @@ public class InsnUtils {
 		return null;
 	}
 
+	public static boolean isInsnType(@Nullable InsnNode insn, InsnType insnType) {
+		return insn != null && insn.getType() == insnType;
+	}
+
 	@Nullable
 	public static InsnNode getWrappedInsn(InsnArg arg) {
 		if (arg != null && arg.isInsnWrap()) {
 			return ((InsnWrapArg) arg).getWrapInsn();
 		}
 		return null;
+	}
+
+	public static boolean isWrapped(InsnArg arg, InsnType insnType) {
+		if (arg != null && arg.isInsnWrap()) {
+			InsnNode wrapInsn = ((InsnWrapArg) arg).getWrapInsn();
+			return wrapInsn.getType() == insnType;
+		}
+		return false;
 	}
 
 	public static boolean dontGenerateIfNotUsed(InsnNode insn) {
@@ -249,5 +261,39 @@ public class InsnUtils {
 			}
 		}
 		return false;
+	}
+
+	public static boolean containsVar(InsnNode insn, RegisterArg arg) {
+		if (insn == null) {
+			return false;
+		}
+		RegisterArg result = insn.getResult();
+		if (result != null && result.sameRegAndSVar(arg)) {
+			return true;
+		}
+		if (insn.getArgsCount() == 0) {
+			return false;
+		}
+		for (InsnArg insnArg : insn.getArguments()) {
+			if (containsVar(insnArg, arg)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	public static boolean containsVar(InsnArg insnArg, RegisterArg arg) {
+		if (insnArg.isRegister()) {
+			return ((RegisterArg) insnArg).sameRegAndSVar(arg);
+		}
+		if (insnArg.isInsnWrap()) {
+			InsnNode wrapInsn = ((InsnWrapArg) insnArg).getWrapInsn();
+			return containsVar(wrapInsn, arg);
+		}
+		return false;
+	}
+
+	public static boolean contains(InsnNode insn, AFlag flag) {
+		return insn != null && insn.contains(flag);
 	}
 }

@@ -8,7 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import jadx.api.ICodeInfo;
-import jadx.api.JadxArgs;
+import jadx.api.impl.SimpleCodeInfo;
 import jadx.core.codegen.CodeGen;
 import jadx.core.dex.attributes.AFlag;
 import jadx.core.dex.nodes.ClassNode;
@@ -27,10 +27,12 @@ import static jadx.core.dex.nodes.ProcessState.PROCESS_STARTED;
 public class ProcessClass {
 	private static final Logger LOG = LoggerFactory.getLogger(ProcessClass.class);
 
+	private static final ICodeInfo NOT_GENERATED = new SimpleCodeInfo("");
+
 	private final List<IDexTreeVisitor> passes;
 
-	public ProcessClass(JadxArgs args) {
-		this.passes = Jadx.getPassesList(args);
+	public ProcessClass(List<IDexTreeVisitor> passesList) {
+		this.passes = passesList;
 	}
 
 	@Nullable
@@ -101,7 +103,7 @@ public class ProcessClass {
 		try {
 			if (cls.contains(AFlag.DONT_GENERATE)) {
 				process(cls, false);
-				return ICodeInfo.EMPTY;
+				return NOT_GENERATED;
 			}
 			for (ClassNode depCls : cls.getDependencies()) {
 				process(depCls, false);
@@ -117,6 +119,33 @@ public class ProcessClass {
 				throw new JadxRuntimeException("Codegen failed");
 			}
 			return code;
+		} catch (Throwable e) {
+			throw new JadxRuntimeException("Failed to generate code for class: " + cls.getFullName(), e);
+		}
+	}
+
+	/**
+	 * Load and process class without its deps
+	 */
+	public void forceProcess(ClassNode cls) {
+		ClassNode topParentClass = cls.getTopParentClass();
+		if (topParentClass != cls) {
+			forceProcess(topParentClass);
+			return;
+		}
+		try {
+			process(cls, false);
+		} catch (Throwable e) {
+			throw new JadxRuntimeException("Failed to process class: " + cls.getFullName(), e);
+		}
+	}
+
+	/**
+	 * Generate code for class without processing its deps
+	 */
+	public @Nullable ICodeInfo forceGenerateCode(ClassNode cls) {
+		try {
+			return process(cls, true);
 		} catch (Throwable e) {
 			throw new JadxRuntimeException("Failed to generate code for class: " + cls.getFullName(), e);
 		}

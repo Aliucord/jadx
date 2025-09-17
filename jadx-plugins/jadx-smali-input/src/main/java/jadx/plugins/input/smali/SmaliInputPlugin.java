@@ -1,29 +1,33 @@
 package jadx.plugins.input.smali;
 
-import java.nio.file.Path;
-import java.util.List;
-
+import jadx.api.plugins.JadxPlugin;
+import jadx.api.plugins.JadxPluginContext;
 import jadx.api.plugins.JadxPluginInfo;
-import jadx.api.plugins.input.JadxInputPlugin;
-import jadx.api.plugins.input.data.ILoadResult;
-import jadx.api.plugins.input.data.impl.EmptyLoadResult;
+import jadx.api.plugins.input.data.impl.EmptyCodeLoader;
 import jadx.plugins.input.dex.DexInputPlugin;
 
-public class SmaliInputPlugin implements JadxInputPlugin {
+public class SmaliInputPlugin implements JadxPlugin {
+	public static final String PLUGIN_ID = "smali-input";
 
-	private final DexInputPlugin dexInput = new DexInputPlugin();
+	private final SmaliInputOptions options = new SmaliInputOptions();
 
 	@Override
 	public JadxPluginInfo getPluginInfo() {
-		return new JadxPluginInfo("smali-input", "SmaliInput", "Load .smali files");
+		return new JadxPluginInfo(PLUGIN_ID, "Smali Input", "Load .smali files");
 	}
 
 	@Override
-	public ILoadResult loadFiles(List<Path> input) {
-		SmaliConvert convert = new SmaliConvert();
-		if (!convert.execute(input)) {
-			return EmptyLoadResult.INSTANCE;
-		}
-		return dexInput.loadFiles(convert.getDexFiles(), convert);
+	public void init(JadxPluginContext context) {
+		context.registerOptions(options);
+		options.setThreads(context.getArgs().getThreadsCount());
+
+		DexInputPlugin dexInput = context.plugins().getInstance(DexInputPlugin.class);
+		context.addCodeInput(input -> {
+			SmaliConvert convert = new SmaliConvert();
+			if (!convert.execute(input, options)) {
+				return EmptyCodeLoader.INSTANCE;
+			}
+			return dexInput.loadDexData(convert.getDexData());
+		});
 	}
 }

@@ -31,12 +31,13 @@ import javax.swing.text.DefaultCaret;
 
 import org.fife.ui.rsyntaxtextarea.AbstractTokenMakerFactory;
 import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
+import org.fife.ui.rsyntaxtextarea.RSyntaxUtilities;
 import org.fife.ui.rsyntaxtextarea.Token;
 import org.fife.ui.rsyntaxtextarea.TokenMakerFactory;
 import org.fife.ui.rsyntaxtextarea.TokenTypes;
+import org.fife.ui.rtextarea.Gutter;
 import org.fife.ui.rtextarea.SearchContext;
 import org.fife.ui.rtextarea.SearchEngine;
-import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,13 +47,16 @@ import jadx.core.utils.StringUtils;
 import jadx.core.utils.exceptions.JadxRuntimeException;
 import jadx.gui.settings.JadxSettings;
 import jadx.gui.treemodel.JClass;
+import jadx.gui.treemodel.JEditableNode;
 import jadx.gui.treemodel.JNode;
 import jadx.gui.ui.MainWindow;
+import jadx.gui.ui.action.JNodeAction;
 import jadx.gui.ui.panel.ContentPanel;
 import jadx.gui.utils.DefaultPopupMenuListener;
 import jadx.gui.utils.JumpPosition;
 import jadx.gui.utils.NLS;
 import jadx.gui.utils.UiUtils;
+import jadx.gui.utils.ui.DocumentUpdateListener;
 import jadx.gui.utils.ui.ZoomActions;
 
 public abstract class AbstractCodeArea extends RSyntaxTextArea {
@@ -70,35 +74,83 @@ public abstract class AbstractCodeArea extends RSyntaxTextArea {
 		} else {
 			throw new JadxRuntimeException("Unexpected TokenMakerFactory instance: " + tokenMakerFactory.getClass());
 		}
+
+		SmaliFoldParser.register();
 	}
 
 	protected ContentPanel contentPanel;
 	protected JNode node;
+
+	protected volatile boolean loaded = false;
 
 	public AbstractCodeArea(ContentPanel contentPanel, JNode node) {
 		this.contentPanel = contentPanel;
 		this.node = Objects.requireNonNull(node);
 
 		setMarkOccurrences(false);
-		setEditable(false);
-		setCodeFoldingEnabled(false);
 		setFadeCurrentLineHighlight(true);
-		setCloseCurlyBraces(true);
 		setAntiAliasingEnabled(true);
+		applyEditableProperties(node);
 		loadSettings();
 
-		JadxSettings settings = contentPanel.getTabbedPane().getMainWindow().getSettings();
+		JadxSettings settings = contentPanel.getMainWindow().getSettings();
 		setLineWrap(settings.isCodeAreaLineWrap());
-		addWrapLineMenuAction(settings);
-
-		addCaretActions();
-		addFastCopyAction();
 
 		ZoomActions.register(this, settings, this::loadSettings);
+
+		if (node instanceof JEditableNode) {
+			JEditableNode editableNode = (JEditableNode) node;
+			addSaveActions(editableNode);
+			addChangeUpdates(editableNode);
+		} else {
+			addCaretActions();
+			addFastCopyAction();
+		}
 	}
 
-	private void addWrapLineMenuAction(JadxSettings settings) {
-		JPopupMenu popupMenu = getPopupMenu();
+	private void applyEditableProperties(JNode node) {
+		boolean editable = node.isEditable();
+		setEditable(editable);
+		if (editable) {
+			setCloseCurlyBraces(true);
+			setCloseMarkupTags(true);
+			setAutoIndentEnabled(true);
+			setClearWhitespaceLinesEnabled(true);
+		}
+	}
+
+	@Override
+	protected JPopupMenu createPopupMenu() {
+		JPopupMenu menu = new JPopupMenu();
+		if (node.isEditable()) {
+			menu.add(createPopupMenuItem(getAction(UNDO_ACTION)));
+			menu.add(createPopupMenuItem(getAction(REDO_ACTION)));
+			menu.addSeparator();
+			menu.add(createPopupMenuItem(cutAction));
+			menu.add(createPopupMenuItem(copyAction));
+			menu.add(createPopupMenuItem(getAction(PASTE_ACTION)));
+			menu.add(createPopupMenuItem(getAction(DELETE_ACTION)));
+			menu.addSeparator();
+			menu.add(createPopupMenuItem(getAction(SELECT_ALL_ACTION)));
+		} else {
+			menu.add(createPopupMenuItem(copyAction));
+			menu.add(createPopupMenuItem(getAction(SELECT_ALL_ACTION)));
+		}
+		appendFoldingMenu(menu);
+		appendWrapLineMenu(menu);
+		return menu;
+	}
+
+	@Override
+	protected void appendFoldingMenu(JPopupMenu popup) {
+		// append code folding popup menu entry only if enabled
+		if (isCodeFoldingEnabled()) {
+			super.appendFoldingMenu(popup);
+		}
+	}
+
+	private void appendWrapLineMenu(JPopupMenu popupMenu) {
+		JadxSettings settings = contentPanel.getMainWindow().getSettings();
 		popupMenu.addSeparator();
 		JCheckBoxMenuItem wrapItem = new JCheckBoxMenuItem(NLS.str("popup.line_wrap"), getLineWrap());
 		wrapItem.setAction(new AbstractAction(NLS.str("popup.line_wrap")) {
@@ -106,7 +158,7 @@ public abstract class AbstractCodeArea extends RSyntaxTextArea {
 			public void actionPerformed(ActionEvent e) {
 				boolean wrap = !getLineWrap();
 				settings.setCodeAreaLineWrap(wrap);
-				contentPanel.getTabbedPane().getOpenTabs().values().forEach(v -> {
+				contentPanel.getTabbedPane().getTabs().forEach(v -> {
 					if (v instanceof AbstractCodeContentPanel) {
 						AbstractCodeArea codeArea = ((AbstractCodeContentPanel) v).getCodeArea();
 						setCodeAreaLineWrap(codeArea, wrap);
@@ -186,6 +238,26 @@ public abstract class AbstractCodeArea extends RSyntaxTextArea {
 		});
 	}
 
+	private void addSaveActions(JEditableNode node) {
+		addKeyListener(new KeyAdapter() {
+			@Override
+			public void keyPressed(KeyEvent e) {
+				if (e.getKeyCode() == KeyEvent.VK_S && UiUtils.isCtrlDown(e)) {
+					node.save(AbstractCodeArea.this.getText());
+					node.setChanged(false);
+				}
+			}
+		});
+	}
+
+	private void addChangeUpdates(JEditableNode editableNode) {
+		getDocument().addDocumentListener(new DocumentUpdateListener(ev -> {
+			if (loaded) {
+				editableNode.setChanged(true);
+			}
+		}));
+	}
+
 	private String highlightCaretWord(String lastText, int pos) {
 		String text = getWordByPosition(pos);
 		if (StringUtils.isEmpty(text)) {
@@ -203,49 +275,88 @@ public abstract class AbstractCodeArea extends RSyntaxTextArea {
 		return getWordByPosition(getCaretPosition());
 	}
 
-	@Nullable
-	public String getWordByPosition(int pos) {
+	public @Nullable String getWordByPosition(int offset) {
+		Token token = getWordTokenAtOffset(offset);
+		if (token == null) {
+			return null;
+		}
+		String str = token.getLexeme();
+		int len = str.length();
+		if (len > 2 && str.startsWith("\"") && str.endsWith("\"")) {
+			return str.substring(1, len - 1);
+		}
+		return str;
+	}
+
+	/**
+	 * Return any word token (not whitespace or special symbol) at offset.
+	 * Select the previous token if the cursor at word end (current token already is whitespace)
+	 */
+	public @Nullable Token getWordTokenAtOffset(int offset) {
 		try {
-			Token token = modelToToken(pos);
-			return getWordFromToken(token);
+			int line = this.getLineOfOffset(offset);
+			Token lineTokens = this.getTokenListForLine(line);
+			Token token = null;
+			Token prevToken = null;
+			for (Token t = lineTokens; t != null && t.isPaintable(); t = t.getNextToken()) {
+				if (t.containsPosition(offset)) {
+					token = t;
+					break;
+				}
+				prevToken = t;
+			}
+			if (token == null) {
+				return null;
+			}
+			if (isWordToken(token)) {
+				return token;
+			}
+			if (isWordToken(prevToken)) {
+				return prevToken;
+			}
+			return null;
 		} catch (Exception e) {
-			LOG.error("Failed to get word at pos: {}", pos, e);
+			LOG.error("Failed to get token at pos: {}", offset, e);
 			return null;
 		}
 	}
 
-	@Nullable
-	private static String getWordFromToken(@Nullable Token token) {
+	public static boolean isWordToken(@Nullable Token token) {
 		if (token == null) {
-			return null;
+			return false;
 		}
 		switch (token.getType()) {
 			case TokenTypes.NULL:
 			case TokenTypes.WHITESPACE:
 			case TokenTypes.SEPARATOR:
 			case TokenTypes.OPERATOR:
-				return null;
+			case TokenTypes.FUNCTION:
+				return false;
 
 			case TokenTypes.IDENTIFIER:
 				if (token.length() == 1) {
 					char ch = token.charAt(0);
-					if (ch == ';' || ch == '.') {
-						return null;
-					}
+					return ch != ';' && ch != '.' && ch != ',';
 				}
-				return token.getLexeme();
+				return true;
 
 			default:
-				return token.getLexeme();
+				return true;
 		}
 	}
 
-	public abstract @NotNull ICodeInfo getCodeInfo();
+	public abstract ICodeInfo getCodeInfo();
 
 	/**
 	 * Implement in this method the code that loads and sets the content to be displayed
+	 * Call `setLoaded()` on load finish.
 	 */
 	public abstract void load();
+
+	public void setLoaded() {
+		this.loaded = true;
+		discardAllEdits(); // disable 'undo' action to empty state (before load)
+	}
 
 	/**
 	 * Implement in this method the code that reloads node from cache and sets the new content to be
@@ -257,20 +368,23 @@ public abstract class AbstractCodeArea extends RSyntaxTextArea {
 		RSyntaxTextArea area = new RSyntaxTextArea();
 		area.setEditable(false);
 		area.setCodeFoldingEnabled(false);
+		area.setAntiAliasingEnabled(true);
 		loadCommonSettings(mainWindow, area);
 		return area;
 	}
 
 	public static void loadCommonSettings(MainWindow mainWindow, RSyntaxTextArea area) {
-		area.setAntiAliasingEnabled(true);
-		mainWindow.getEditorTheme().apply(area);
-
 		JadxSettings settings = mainWindow.getSettings();
+		mainWindow.getEditorThemeManager().apply(area);
 		area.setFont(settings.getFont());
+		Gutter gutter = RSyntaxUtilities.getGutter(area);
+		if (gutter != null) {
+			gutter.setLineNumberFont(settings.getFont());
+		}
 	}
 
 	public void loadSettings() {
-		loadCommonSettings(contentPanel.getTabbedPane().getMainWindow(), this);
+		loadCommonSettings(contentPanel.getMainWindow(), this);
 	}
 
 	public void scrollToPos(int pos) {
@@ -311,8 +425,7 @@ public abstract class AbstractCodeArea extends RSyntaxTextArea {
 	}
 
 	/**
-	 * @param str
-	 *            - if null -> reset current highlights
+	 * @param str - if null -> reset current highlights
 	 */
 	private void highlightAllMatches(@Nullable String str) {
 		SearchContext context = new SearchContext(str);
@@ -322,8 +435,12 @@ public abstract class AbstractCodeArea extends RSyntaxTextArea {
 		SearchEngine.markAll(this, context);
 	}
 
-	public JumpPosition getCurrentPosition() {
-		return new JumpPosition(node, getCaretPosition());
+	public @Nullable JumpPosition getCurrentPosition() {
+		int pos = getCaretPosition();
+		if (pos == 0) {
+			return null;
+		}
+		return new JumpPosition(node, pos);
 	}
 
 	public int getLineStartFor(int pos) throws BadLocationException {
@@ -362,12 +479,7 @@ public abstract class AbstractCodeArea extends RSyntaxTextArea {
 	}
 
 	public void dispose() {
-		// code area reference can still be used somewhere in UI objects,
-		// reset node reference to allow to GC jadx objects tree
-		node = null;
-		contentPanel = null;
-
-		// also clear internals
+		// clear internals
 		try {
 			setIgnoreRepaint(true);
 			setText("");
@@ -396,6 +508,10 @@ public abstract class AbstractCodeArea extends RSyntaxTextArea {
 		} catch (Throwable e) {
 			LOG.debug("Error on code area dispose", e);
 		}
+		// code area reference can still be used somewhere in UI objects,
+		// reset node reference to allow to GC jadx objects tree
+		node = null;
+		contentPanel = null;
 	}
 
 	@Override

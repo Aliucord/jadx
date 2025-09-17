@@ -15,6 +15,7 @@ import jadx.api.metadata.annotations.InsnCodeOffset;
 import jadx.api.metadata.annotations.VarNode;
 import jadx.api.plugins.input.data.MethodHandleType;
 import jadx.api.plugins.input.data.annotations.EncodedValue;
+import jadx.core.codegen.utils.CodeGenUtils;
 import jadx.core.dex.attributes.AFlag;
 import jadx.core.dex.attributes.AType;
 import jadx.core.dex.attributes.FieldInitInsnAttr;
@@ -51,6 +52,7 @@ import jadx.core.dex.instructions.args.LiteralArg;
 import jadx.core.dex.instructions.args.Named;
 import jadx.core.dex.instructions.args.RegisterArg;
 import jadx.core.dex.instructions.args.SSAVar;
+import jadx.core.dex.instructions.java.JsrNode;
 import jadx.core.dex.instructions.mods.ConstructorInsn;
 import jadx.core.dex.instructions.mods.TernaryInsn;
 import jadx.core.dex.nodes.BlockNode;
@@ -59,7 +61,6 @@ import jadx.core.dex.nodes.FieldNode;
 import jadx.core.dex.nodes.InsnNode;
 import jadx.core.dex.nodes.MethodNode;
 import jadx.core.dex.nodes.RootNode;
-import jadx.core.utils.CodeGenUtils;
 import jadx.core.utils.RegionUtils;
 import jadx.core.utils.exceptions.CodegenException;
 import jadx.core.utils.exceptions.JadxRuntimeException;
@@ -433,7 +434,7 @@ public class InsnGen {
 					code.add(']');
 				}
 				int dim = arrayType.getArrayDimension();
-				for (; k < dim - 1; k++) {
+				for (; k < dim; k++) {
 					code.add("[]");
 				}
 				break;
@@ -633,6 +634,17 @@ public class InsnGen {
 				}
 				break;
 
+			case JAVA_JSR:
+				fallbackOnlyInsn(insn);
+				code.add("jsr -> ").add(MethodGen.getLabelName(((JsrNode) insn).getTarget()));
+				break;
+
+			case JAVA_RET:
+				fallbackOnlyInsn(insn);
+				code.add("ret ");
+				addArg(code, insn.getArg(0));
+				break;
+
 			default:
 				throw new CodegenException(mth, "Unknown instruction: " + insn.getType());
 		}
@@ -737,6 +749,7 @@ public class InsnGen {
 			code.attachAnnotation(refMth);
 			code.add("this");
 		} else {
+			boolean forceShortName = addOuterClassInstance(insn, code, callMth);
 			code.add("new ");
 			if (refMth == null || refMth.contains(AFlag.DONT_GENERATE)) {
 				// use class reference if constructor method is missing (default constructor)
@@ -744,7 +757,11 @@ public class InsnGen {
 			} else {
 				code.attachAnnotation(refMth);
 			}
-			mgen.getClassGen().addClsName(code, insn.getClassType());
+			if (forceShortName) {
+				mgen.getClassGen().addClsShortNameForced(code, insn.getClassType());
+			} else {
+				mgen.getClassGen().addClsName(code, insn.getClassType());
+			}
 			GenericInfoAttr genericInfoAttr = insn.get(AType.GENERIC_INFO);
 			if (genericInfoAttr != null) {
 				code.add('<');
@@ -763,6 +780,27 @@ public class InsnGen {
 			}
 		}
 		generateMethodArguments(code, insn, 0, callMth);
+	}
+
+	private boolean addOuterClassInstance(ConstructorInsn insn, ICodeWriter code, MethodNode callMth) throws CodegenException {
+		if (callMth == null || !callMth.contains(AFlag.SKIP_FIRST_ARG)) {
+			return false;
+		}
+		ClassNode ctrCls = callMth.getDeclaringClass();
+		if (!ctrCls.isInner() || insn.getArgsCount() == 0) {
+			return false;
+		}
+		InsnArg instArg = insn.getArg(0);
+		if (instArg.isThis()) {
+			return false;
+		}
+		// instance arg should be of an outer class type
+		if (!instArg.getType().equals(ctrCls.getDeclaringClass().getType())) {
+			return false;
+		}
+		addArgDot(code, instArg);
+		// can't use another dot, force short name of class
+		return true;
 	}
 
 	private void inlineAnonymousConstructor(ICodeWriter code, ClassNode cls, ConstructorInsn insn) throws CodegenException {
@@ -924,7 +962,7 @@ public class InsnGen {
 		makeInlinedLambdaMethod(code, customNode, callMth);
 	}
 
-	private void makeRefLambda(ICodeWriter code, InvokeCustomNode customNode) {
+	private void makeRefLambda(ICodeWriter code, InvokeCustomNode customNode) throws CodegenException {
 		InsnNode callInsn = customNode.getCallInsn();
 		if (callInsn instanceof ConstructorInsn) {
 			MethodInfo callMth = ((ConstructorInsn) callInsn).getCallMth();
@@ -938,7 +976,7 @@ public class InsnGen {
 			if (customNode.getHandleType() == MethodHandleType.INVOKE_STATIC) {
 				useClass(code, callMth.getDeclClass());
 			} else {
-				code.add("this");
+				addArg(code, customNode.getArg(0));
 			}
 			code.add("::").add(callMth.getAlias());
 		}
@@ -1003,6 +1041,9 @@ public class InsnGen {
 		} else {
 			int callArgsCount = callArgs.size();
 			int startArg = callArgsCount - implArgs.size();
+			if (callArgsCount - startArg > 1) {
+				code.add('(');
+			}
 			for (int i = startArg; i < callArgsCount; i++) {
 				if (i != startArg) {
 					code.add(", ");
@@ -1010,14 +1051,23 @@ public class InsnGen {
 				CodeVar argCodeVar = callArgs.get(i).getSVar().getCodeVar();
 				defVar(code, argCodeVar);
 			}
+			if (callArgsCount - startArg > 1) {
+				code.add(')');
+			}
 		}
 		// force set external arg names into call method args
 		int extArgsCount = customNode.getArgsCount();
 		int startArg = customNode.getHandleType() == MethodHandleType.INVOKE_STATIC ? 0 : 1; // skip 'this' arg
+		int callArg = 0;
 		for (int i = startArg; i < extArgsCount; i++) {
-			RegisterArg extArg = (RegisterArg) customNode.getArg(i);
-			RegisterArg callRegArg = callArgs.get(i);
-			callRegArg.getSVar().setCodeVar(extArg.getSVar().getCodeVar());
+			InsnArg arg = customNode.getArg(i);
+			if (arg.isRegister()) {
+				RegisterArg extArg = (RegisterArg) arg;
+				RegisterArg callRegArg = callArgs.get(callArg++);
+				callRegArg.getSVar().setCodeVar(extArg.getSVar().getCodeVar());
+			} else {
+				throw new JadxRuntimeException("Unexpected argument type in lambda call: " + arg.getClass().getSimpleName());
+			}
 		}
 		code.add(" -> {");
 		code.incIndent();
@@ -1074,27 +1124,23 @@ public class InsnGen {
 		}
 		int argsCount = insn.getArgsCount();
 		code.add('(');
+		SkipMethodArgsAttr skipAttr = mthNode == null ? null : mthNode.get(AType.SKIP_MTH_ARGS);
 		boolean firstArg = true;
 		if (k < argsCount) {
 			for (int i = k; i < argsCount; i++) {
 				InsnArg arg = insn.getArg(i);
-				if (arg.contains(AFlag.SKIP_ARG)) {
+				if (arg.contains(AFlag.SKIP_ARG) || (skipAttr != null && skipAttr.isSkip(i - startArgNum))) {
 					continue;
 				}
-				int argOrigPos = i - startArgNum;
-				if (SkipMethodArgsAttr.isSkip(mthNode, argOrigPos)) {
-					continue;
-				}
-				if (!firstArg) {
-					code.add(", ");
-				} else {
+				if (firstArg) {
 					firstArg = false;
+				} else {
+					code.add(", ");
 				}
 				if (i == argsCount - 1 && processVarArg(code, insn, arg)) {
 					continue;
 				}
 				addArg(code, arg, false);
-				firstArg = false;
 			}
 		}
 		code.add(')');

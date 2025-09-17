@@ -13,6 +13,8 @@ import javax.swing.JTextArea;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import jadx.commons.app.JadxSystemInfo;
+
 import static java.awt.Desktop.Action;
 
 public class Link extends JLabel {
@@ -20,13 +22,20 @@ public class Link extends JLabel {
 
 	private static final Logger LOG = LoggerFactory.getLogger(Link.class);
 
-	private final String url;
+	private String url;
+
+	public Link() {
+		super();
+		init();
+	}
 
 	public Link(String text, String url) {
 		super(text);
-		this.url = url;
-		setText(text);
-		setToolTipText("Open " + url + " in your browser");
+		init();
+		setUrl(url);
+	}
+
+	private void init() {
 		setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		this.addMouseListener(new MouseAdapter() {
 			@Override
@@ -34,6 +43,11 @@ public class Link extends JLabel {
 				browse();
 			}
 		});
+	}
+
+	public void setUrl(String url) {
+		this.url = url;
+		setToolTipText("Open " + url + " in your browser");
 	}
 
 	private void browse() {
@@ -49,13 +63,13 @@ public class Link extends JLabel {
 			}
 		}
 		try {
-			if (SystemInfo.IS_WINDOWS) {
+			if (JadxSystemInfo.IS_WINDOWS) {
 				new ProcessBuilder()
 						.command(new String[] { "rundll32", "url.dll,FileProtocolHandler", url })
 						.start();
 				return;
 			}
-			if (SystemInfo.IS_MAC) {
+			if (JadxSystemInfo.IS_MAC) {
 				new ProcessBuilder()
 						.command(new String[] { "open", url })
 						.start();

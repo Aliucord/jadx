@@ -1,7 +1,8 @@
 package jadx.core.dex.attributes.nodes;
 
 import jadx.api.CommentsLevel;
-import jadx.api.ICodeWriter;
+import jadx.api.data.CommentStyle;
+import jadx.core.codegen.utils.CodeComment;
 import jadx.core.dex.attributes.AFlag;
 import jadx.core.dex.attributes.AType;
 import jadx.core.dex.nodes.ICodeNode;
@@ -20,37 +21,36 @@ public abstract class NotificationAttrNode extends LineAttrNode implements ICode
 
 	public void addWarn(String warn) {
 		ErrorsCounter.warning(this, warn);
-		initCommentsAttr().add(CommentsLevel.WARN, warn);
+		JadxCommentsAttr.add(this, CommentsLevel.WARN, warn);
 		this.add(AFlag.INCONSISTENT_CODE);
 	}
 
+	public void addCodeComment(String comment) {
+		addAttr(AType.CODE_COMMENTS, new CodeComment(comment, CommentStyle.LINE));
+	}
+
+	public void addCodeComment(String comment, CommentStyle style) {
+		addAttr(AType.CODE_COMMENTS, new CodeComment(comment, style));
+	}
+
 	public void addWarnComment(String warn) {
-		initCommentsAttr().add(CommentsLevel.WARN, warn);
+		JadxCommentsAttr.add(this, CommentsLevel.WARN, warn);
 	}
 
 	public void addWarnComment(String warn, Throwable exc) {
-		String commentStr = warn + ICodeWriter.NL + Utils.getStackTrace(exc);
-		initCommentsAttr().add(CommentsLevel.WARN, commentStr);
+		String commentStr = warn + root().getArgs().getCodeNewLineStr() + Utils.getStackTrace(exc);
+		JadxCommentsAttr.add(this, CommentsLevel.WARN, commentStr);
 	}
 
 	public void addInfoComment(String commentStr) {
-		initCommentsAttr().add(CommentsLevel.INFO, commentStr);
+		JadxCommentsAttr.add(this, CommentsLevel.INFO, commentStr);
 	}
 
 	public void addDebugComment(String commentStr) {
-		initCommentsAttr().add(CommentsLevel.DEBUG, commentStr);
+		JadxCommentsAttr.add(this, CommentsLevel.DEBUG, commentStr);
 	}
 
 	public CommentsLevel getCommentsLevel() {
 		return this.root().getArgs().getCommentsLevel();
-	}
-
-	private JadxCommentsAttr initCommentsAttr() {
-		JadxCommentsAttr commentsAttr = this.get(AType.JADX_COMMENTS);
-		if (commentsAttr == null) {
-			commentsAttr = new JadxCommentsAttr();
-			this.addAttr(commentsAttr);
-		}
-		return commentsAttr;
 	}
 }

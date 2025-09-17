@@ -1,15 +1,16 @@
 package jadx.gui.jobs;
 
 import java.io.File;
-import java.util.List;
 
 import javax.swing.JOptionPane;
 
 import jadx.api.ICodeCache;
+import jadx.api.utils.tasks.ITaskExecutor;
 import jadx.gui.JadxWrapper;
+import jadx.gui.cache.code.CodeCacheMode;
+import jadx.gui.cache.code.FixedCodeCache;
 import jadx.gui.ui.MainWindow;
 import jadx.gui.utils.NLS;
-import jadx.gui.utils.codecache.FixedCodeCache;
 
 public class ExportTask extends CancelableBackgroundTask {
 
@@ -32,19 +33,21 @@ public class ExportTask extends CancelableBackgroundTask {
 	}
 
 	@Override
-	public List<Runnable> scheduleJobs() {
+	public ITaskExecutor scheduleTasks() {
 		wrapCodeCache();
 		wrapper.getArgs().setRootDir(saveDir);
-		List<Runnable> saveTasks = wrapper.getSaveTasks();
-		this.timeLimit = DecompileTask.calcDecompileTimeLimit(saveTasks.size());
+		ITaskExecutor saveTasks = wrapper.getDecompiler().getSaveTaskExecutor();
+		this.timeLimit = DecompileTask.calcDecompileTimeLimit(saveTasks.getTasksCount());
 		return saveTasks;
 	}
 
 	private void wrapCodeCache() {
 		uiCodeCache = wrapper.getArgs().getCodeCache();
-		// do not save newly decompiled code in cache to not increase memory usage
-		// TODO: maybe make memory limited cache?
-		wrapper.getArgs().setCodeCache(new FixedCodeCache(uiCodeCache));
+		if (mainWindow.getSettings().getCodeCacheMode() != CodeCacheMode.DISK) {
+			// do not save newly decompiled code in cache to not increase memory usage
+			// TODO: maybe make memory limited cache?
+			wrapper.getArgs().setCodeCache(new FixedCodeCache(uiCodeCache));
+		}
 	}
 
 	@Override

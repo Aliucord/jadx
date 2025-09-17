@@ -76,17 +76,13 @@ public class AndroidResourcesUtils {
 	/**
 	 * Force hex format for Android resources ids
 	 */
-	public static boolean handleResourceFieldValue(ClassNode cls, ICodeWriter code, long lit, ArgType type) {
-		if (type.equals(ArgType.INT) && isResourceClass(cls)) {
-			code.add(String.format("0x%08x", lit));
-			return true;
-		}
-		return false;
+	public static boolean isResourceFieldValue(ClassNode cls, ArgType type) {
+		return type.equals(ArgType.INT) && isResourceClass(cls);
 	}
 
 	public static boolean isResourceClass(ClassNode cls) {
 		ClassNode parentClass = cls.getParentClass();
-		return parentClass != null && parentClass.getShortName().equals("R");
+		return parentClass != null && parentClass.getAlias().equals("R");
 	}
 
 	private static final class ResClsInfo {
@@ -113,12 +109,12 @@ public class AndroidResourcesUtils {
 			for (ClassNode innerClass : resCls.getInnerClasses()) {
 				ResClsInfo innerResCls = new ResClsInfo(innerClass);
 				innerClass.getFields().forEach(field -> innerResCls.getFieldsMap().put(field.getName(), field));
-				innerClsMap.put(innerClass.getShortName(), innerResCls);
+				innerClsMap.put(innerClass.getAlias(), innerResCls);
 			}
 		}
 		for (ResourceEntry resource : resStorage.getResources()) {
 			String resTypeName = resource.getTypeName();
-			String resName = resTypeName.equals("style") ? resource.getKeyName().replace('.', '_') : resource.getKeyName();
+			String resName = resource.getKeyName().replace('.', '_');
 
 			ResClsInfo typeClsInfo = innerClsMap.computeIfAbsent(
 					resTypeName,
@@ -146,24 +142,18 @@ public class AndroidResourcesUtils {
 		}
 	}
 
-	@NotNull
 	private static ResClsInfo getClassForResType(ClassNode resCls, boolean rClsExists, String typeName) {
-		String clsFullName = resCls.getFullName() + '$' + typeName;
-		ClassInfo clsInfo = ClassInfo.fromName(resCls.root(), clsFullName);
-		ClassNode existCls = resCls.root().resolveClass(clsInfo);
+		RootNode root = resCls.root();
+		String typeClsFullName = resCls.getClassInfo().makeRawFullName() + '$' + typeName;
+		ClassInfo clsInfo = ClassInfo.fromName(root, typeClsFullName);
+		ClassNode existCls = root.resolveClass(clsInfo);
 		if (existCls != null) {
-			if (!rClsExists && !existCls.isInner()) {
-				// convert found res cls to inner for R class
-				existCls.getClassInfo().convertToInner(resCls);
-				resCls.addInnerClass(existCls);
-			}
 			ResClsInfo resClsInfo = new ResClsInfo(existCls);
 			existCls.getFields().forEach(field -> resClsInfo.getFieldsMap().put(field.getName(), field));
 			return resClsInfo;
 		}
-		ClassNode newTypeCls = ClassNode.addSyntheticClass(resCls.root(), clsInfo,
+		ClassNode newTypeCls = ClassNode.addSyntheticClass(root, clsInfo,
 				AccessFlags.PUBLIC | AccessFlags.STATIC | AccessFlags.FINAL);
-		resCls.addInnerClass(newTypeCls);
 		if (rClsExists) {
 			newTypeCls.addInfoComment("Added by JADX");
 		}
@@ -174,18 +164,17 @@ public class AndroidResourcesUtils {
 	private static Map<Integer, FieldNode> fillResFieldsMap(ClassNode resCls) {
 		Map<Integer, FieldNode> resFieldsMap = new HashMap<>();
 		ConstStorage constStorage = resCls.root().getConstValues();
-		Map<Object, FieldNode> constFields = constStorage.getGlobalConstFields();
-		for (Map.Entry<Object, FieldNode> entry : constFields.entrySet()) {
-			Object key = entry.getKey();
-			FieldNode field = entry.getValue();
-			AccessInfo accessFlags = field.getAccessFlags();
-			if (field.getType().equals(ArgType.INT)
-					&& accessFlags.isStatic()
-					&& accessFlags.isFinal()
+		constStorage.getGlobalConstFields().forEach((key, field) -> {
+			if (field.getFieldInfo().getType().equals(ArgType.INT)
+					&& field instanceof FieldNode
 					&& key instanceof Integer) {
-				resFieldsMap.put((Integer) key, field);
+				FieldNode fldNode = (FieldNode) field;
+				AccessInfo accessFlags = fldNode.getAccessFlags();
+				if (accessFlags.isStatic() && accessFlags.isFinal()) {
+					resFieldsMap.put((Integer) key, fldNode);
+				}
 			}
-		}
+		});
 		return resFieldsMap;
 	}
 }

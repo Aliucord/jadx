@@ -1,12 +1,16 @@
 package jadx.core.utils;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.function.Supplier;
 
-import jadx.api.ICodeWriter;
 import jadx.core.dex.attributes.AFlag;
 import jadx.core.dex.attributes.AType;
 import jadx.core.dex.attributes.nodes.PhiListAttr;
+import jadx.core.dex.attributes.nodes.TmpEdgeAttr;
+import jadx.core.dex.instructions.IfNode;
 import jadx.core.dex.instructions.InsnType;
 import jadx.core.dex.instructions.PhiInsn;
 import jadx.core.dex.instructions.args.InsnArg;
@@ -18,26 +22,37 @@ import jadx.core.dex.nodes.BlockNode;
 import jadx.core.dex.nodes.InsnNode;
 import jadx.core.dex.nodes.MethodNode;
 import jadx.core.dex.visitors.IDexTreeVisitor;
-import jadx.core.dex.visitors.PrepareForCodeGen;
-import jadx.core.dex.visitors.rename.RenameVisitor;
 import jadx.core.utils.exceptions.JadxRuntimeException;
 
 /**
- * Check invariants and information consistency for registers and SSA variables
+ * Check invariants and information consistency for blocks, instructions, registers, SSA variables.
+ * These checks are very expensive and executed only in tests.
  */
 public class DebugChecks {
 
-	public static boolean /* not final! */ checksEnabled = false;
+	private static final Set<String> IGNORE_CHECKS = new HashSet<>(List.of(
+			"PrepareForCodeGen",
+			"RenameVisitor",
+			"DotGraphVisitor"));
 
-	public static void runChecksAfterVisitor(MethodNode mth, IDexTreeVisitor visitor) {
-		Class<? extends IDexTreeVisitor> visitorCls = visitor.getClass();
-		if (visitorCls == PrepareForCodeGen.class || visitorCls == RenameVisitor.class) {
-			return;
+	public static List<IDexTreeVisitor> insertPasses(List<IDexTreeVisitor> passes) {
+		int size = passes.size();
+		List<IDexTreeVisitor> list = new ArrayList<>(size * 2);
+		for (IDexTreeVisitor pass : passes) {
+			list.add(pass);
+			String name = pass.getName();
+			if (!IGNORE_CHECKS.contains(name)) {
+				list.add(new DebugChecksPass(name));
+			}
 		}
+		return list;
+	}
+
+	public static void runChecksAfterVisitor(MethodNode mth, String visitor) {
 		try {
 			checkMethod(mth);
 		} catch (Exception e) {
-			throw new JadxRuntimeException("Debug check failed after visitor: " + visitorCls.getSimpleName(), e);
+			throw new JadxRuntimeException("Debug check failed after visitor: " + visitor, e);
 		}
 	}
 
@@ -48,14 +63,14 @@ public class DebugChecks {
 		}
 		for (BlockNode block : basicBlocks) {
 			for (InsnNode insn : block.getInstructions()) {
-				checkInsn(mth, insn);
+				checkInsn(mth, block, insn);
 			}
 		}
 		checkSSAVars(mth);
 		// checkPHI(mth);
 	}
 
-	private static void checkInsn(MethodNode mth, InsnNode insn) {
+	private static void checkInsn(MethodNode mth, BlockNode block, InsnNode insn) {
 		if (insn.getResult() != null) {
 			checkVar(mth, insn, insn.getResult());
 		}
@@ -64,14 +79,45 @@ public class DebugChecks {
 				checkVar(mth, insn, (RegisterArg) arg);
 			} else if (arg.isInsnWrap()) {
 				InsnNode wrapInsn = ((InsnWrapArg) arg).getWrapInsn();
-				checkInsn(mth, wrapInsn);
+				checkInsn(mth, block, wrapInsn);
 			}
 		}
-		if (insn instanceof TernaryInsn) {
-			TernaryInsn ternaryInsn = (TernaryInsn) insn;
-			for (RegisterArg arg : ternaryInsn.getCondition().getRegisterArgs()) {
-				checkVar(mth, insn, arg);
-			}
+		switch (insn.getType()) {
+			case TERNARY:
+				TernaryInsn ternaryInsn = (TernaryInsn) insn;
+				for (RegisterArg arg : ternaryInsn.getCondition().getRegisterArgs()) {
+					checkVar(mth, insn, arg);
+				}
+				break;
+
+			case IF:
+				IfNode ifNode = (IfNode) insn;
+				if (!ifNode.getThenBlock().equals(ifNode.getElseBlock())) {
+					// exclude temp edges
+					int branches = (int) block.getSuccessors().stream().filter(b -> !hasTmpEdge(block, b)).count();
+					if (branches != 2) {
+						DebugUtils.dumpRaw(mth, "error");
+						throw new JadxRuntimeException(
+								"Incorrect if block successors count: " + branches + " (expect 2), block: " + block);
+					}
+				}
+				checkBlock(mth, ifNode.getThenBlock(), () -> "then block in if insn: " + ifNode);
+				checkBlock(mth, ifNode.getElseBlock(), () -> "else block in if insn: " + ifNode);
+				break;
+		}
+	}
+
+	private static boolean hasTmpEdge(BlockNode start, BlockNode end) {
+		TmpEdgeAttr tmpEdgeAttr = end.get(AType.TMP_EDGE);
+		if (tmpEdgeAttr == null) {
+			return false;
+		}
+		return tmpEdgeAttr.getBlock().equals(start);
+	}
+
+	private static void checkBlock(MethodNode mth, BlockNode block, Supplier<String> source) {
+		if (!mth.getBasicBlocks().contains(block)) {
+			throw new JadxRuntimeException("Block not registered in method: " + block + " from " + source.get());
 		}
 	}
 
@@ -80,16 +126,30 @@ public class DebugChecks {
 
 		SSAVar sVar = reg.getSVar();
 		if (sVar == null) {
+			if (reg.contains(AFlag.DONT_GENERATE) || insn.contains(AFlag.DONT_GENERATE)) {
+				return;
+			}
 			if (Utils.notEmpty(mth.getSVars())) {
-				throw new JadxRuntimeException("Null SSA var in " + insn + ", mth: " + mth);
+				throw new JadxRuntimeException("Null SSA var in " + reg + " at " + insn);
 			}
 			return;
 		}
+		if (Utils.indexInListByRef(mth.getSVars(), sVar) == -1) {
+			throw new JadxRuntimeException("SSA var not present in method vars list, var: " + sVar + " from insn: " + insn);
+		}
+		RegisterArg resArg = insn.getResult();
 		List<RegisterArg> useList = sVar.getUseList();
-		boolean assignReg = insn.getResult() == reg;
-		if (!assignReg && !Utils.containsInListByRef(useList, reg)) {
-			throw new JadxRuntimeException("Incorrect use list in ssa var: " + sVar + ", register not listed."
-					+ ICodeWriter.NL + " insn: " + insn);
+		if (resArg == reg) {
+			if (sVar.getAssignInsn() != insn) {
+				throw new JadxRuntimeException("Incorrect assign in ssa var: " + sVar
+						+ "\n expected: " + sVar.getAssignInsn()
+						+ "\n got: " + insn);
+			}
+		} else {
+			if (!Utils.containsInListByRef(useList, reg)) {
+				throw new JadxRuntimeException("Incorrect use list in ssa var: " + sVar + ", register not listed."
+						+ "\n insn: " + insn);
+			}
 		}
 		for (RegisterArg useArg : useList) {
 			checkRegisterArg(mth, useArg);
@@ -163,7 +223,7 @@ public class DebugChecks {
 			BlockNode parentInsnBlock = BlockUtils.getBlockByInsn(mth, parentInsn);
 			if (parentInsnBlock == null) {
 				throw new JadxRuntimeException("Parent insn not found in blocks tree for: " + reg
-						+ ICodeWriter.NL + " insn: " + parentInsn);
+						+ "\n insn: " + parentInsn);
 			}
 		}
 	}

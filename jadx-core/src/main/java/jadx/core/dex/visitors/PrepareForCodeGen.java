@@ -1,7 +1,6 @@
 package jadx.core.dex.visitors;
 
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -25,7 +24,9 @@ import jadx.core.dex.attributes.nodes.LineAttrNode;
 import jadx.core.dex.info.FieldInfo;
 import jadx.core.dex.instructions.ArithNode;
 import jadx.core.dex.instructions.ArithOp;
+import jadx.core.dex.instructions.IndexInsnNode;
 import jadx.core.dex.instructions.InsnType;
+import jadx.core.dex.instructions.InvokeNode;
 import jadx.core.dex.instructions.args.ArgType;
 import jadx.core.dex.instructions.args.InsnArg;
 import jadx.core.dex.instructions.args.InsnWrapArg;
@@ -38,7 +39,6 @@ import jadx.core.dex.nodes.FieldNode;
 import jadx.core.dex.nodes.InsnContainer;
 import jadx.core.dex.nodes.InsnNode;
 import jadx.core.dex.nodes.MethodNode;
-import jadx.core.dex.regions.Region;
 import jadx.core.dex.regions.conditions.IfCondition;
 import jadx.core.dex.regions.conditions.IfCondition.Mode;
 import jadx.core.dex.visitors.regions.variables.ProcessVariables;
@@ -58,6 +58,11 @@ import jadx.core.utils.exceptions.JadxException;
 		runAfter = { CodeShrinkVisitor.class, ClassModifier.class, ProcessVariables.class }
 )
 public class PrepareForCodeGen extends AbstractVisitor {
+
+	@Override
+	public String getName() {
+		return "PrepareForCodeGen";
+	}
 
 	@Override
 	public boolean visit(ClassNode cls) throws JadxException {
@@ -82,6 +87,7 @@ public class PrepareForCodeGen extends AbstractVisitor {
 			removeParenthesis(block);
 			modifyArith(block);
 			checkConstUsage(block);
+			addNullCasts(mth, block);
 		}
 		moveConstructorInConstructor(mth);
 		collectFieldsUsageInAnnotations(mth, mth);
@@ -245,59 +251,55 @@ public class PrepareForCodeGen extends AbstractVisitor {
 
 	/**
 	 * Check that 'super' or 'this' call in constructor is a first instruction.
-	 * Otherwise move to top and add a warning if code breaks.
+	 * Otherwise, move to the top and add a warning.
 	 */
 	private void moveConstructorInConstructor(MethodNode mth) {
-		if (mth.isConstructor()) {
-			ConstructorInsn constrInsn = searchConstructorCall(mth);
-			if (constrInsn != null && !constrInsn.contains(AFlag.DONT_GENERATE)) {
-				Region oldRootRegion = mth.getRegion();
-				boolean firstInsn = BlockUtils.isFirstInsn(mth, constrInsn);
-				DeclareVariablesAttr declVarsAttr = oldRootRegion.get(AType.DECLARE_VARIABLES);
-				if (firstInsn && declVarsAttr == null) {
-					// move not needed
-					return;
-				}
-
-				// move constructor instruction to new root region
-				String callType = constrInsn.getCallType().toString().toLowerCase();
-				BlockNode blockByInsn = BlockUtils.getBlockByInsn(mth, constrInsn);
-				if (blockByInsn == null) {
-					mth.addWarn("Failed to move " + callType + " instruction to top");
-					return;
-				}
-				InsnList.remove(blockByInsn, constrInsn);
-
-				Region region = new Region(null);
-				region.add(new InsnContainer(Collections.singletonList(constrInsn)));
-				region.add(oldRootRegion);
-				mth.setRegion(region);
-
-				if (!firstInsn) {
-					Set<RegisterArg> regArgs = new HashSet<>();
-					constrInsn.getRegisterArgs(regArgs);
-					regArgs.remove(mth.getThisArg());
-					mth.getArgRegs().forEach(regArgs::remove);
-					if (!regArgs.isEmpty()) {
-						mth.addWarn("Illegal instructions before constructor call");
-					} else {
-						mth.addWarnComment("'" + callType + "' call moved to the top of the method (can break code semantics)");
-					}
-				}
-			}
+		if (!mth.isConstructor()) {
+			return;
 		}
+		ConstructorInsn ctrInsn = searchConstructorCall(mth);
+		if (ctrInsn == null || ctrInsn.contains(AFlag.DONT_GENERATE)) {
+			return;
+		}
+		boolean firstInsn = BlockUtils.isFirstInsn(mth, ctrInsn);
+		DeclareVariablesAttr declVarsAttr = mth.getRegion().get(AType.DECLARE_VARIABLES);
+		if (firstInsn && declVarsAttr == null) {
+			// move not needed
+			return;
+		}
+		String callType = ctrInsn.getCallType().toString().toLowerCase();
+		BlockNode blockByInsn = BlockUtils.getBlockByInsn(mth, ctrInsn);
+		if (blockByInsn == null) {
+			mth.addWarn("Failed to move " + callType + " instruction to top");
+			return;
+		}
+
+		if (!firstInsn) {
+			Set<RegisterArg> regArgs = new HashSet<>();
+			ctrInsn.getRegisterArgs(regArgs);
+			regArgs.remove(mth.getThisArg());
+			mth.getArgRegs().forEach(regArgs::remove);
+			if (!regArgs.isEmpty()) {
+				mth.addWarnComment("Illegal instructions before constructor call");
+				return;
+			}
+			mth.addWarnComment("'" + callType + "' call moved to the top of the method (can break code semantics)");
+		}
+
+		// move confirmed
+		InsnList.remove(blockByInsn, ctrInsn);
+		mth.getRegion().getSubBlocks().add(0, new InsnContainer(ctrInsn));
 	}
 
-	@Nullable
-	private ConstructorInsn searchConstructorCall(MethodNode mth) {
+	private @Nullable ConstructorInsn searchConstructorCall(MethodNode mth) {
 		for (BlockNode block : mth.getBasicBlocks()) {
 			for (InsnNode insn : block.getInstructions()) {
-				InsnType insnType = insn.getType();
-				if (insnType == InsnType.CONSTRUCTOR) {
-					ConstructorInsn constrInsn = (ConstructorInsn) insn;
-					if (constrInsn.isSuper() || constrInsn.isThis()) {
-						return constrInsn;
+				if (insn.getType() == InsnType.CONSTRUCTOR) {
+					ConstructorInsn ctrInsn = (ConstructorInsn) insn;
+					if (ctrInsn.isSuper() || ctrInsn.isThis()) {
+						return ctrInsn;
 					}
+					return null;
 				}
 			}
 		}
@@ -377,6 +379,29 @@ public class PrepareForCodeGen extends AbstractVisitor {
 				List<EncodedValue> valueList = (List<EncodedValue>) encodedValue.getValue();
 				valueList.forEach(v -> checkEncodedValue(mth, v));
 				break;
+		}
+	}
+
+	private void addNullCasts(MethodNode mth, BlockNode block) {
+		for (InsnNode insn : block.getInstructions()) {
+			switch (insn.getType()) {
+				case INVOKE:
+					verifyNullCast(mth, ((InvokeNode) insn).getInstanceArg());
+					break;
+
+				case ARRAY_LENGTH:
+					verifyNullCast(mth, insn.getArg(0));
+					break;
+			}
+		}
+	}
+
+	private void verifyNullCast(MethodNode mth, InsnArg arg) {
+		if (arg != null && arg.isZeroConst()) {
+			ArgType castType = arg.getType();
+			IndexInsnNode castInsn = new IndexInsnNode(InsnType.CAST, castType, 1);
+			castInsn.addArg(InsnArg.lit(0, castType));
+			arg.wrapInstruction(mth, castInsn);
 		}
 	}
 }

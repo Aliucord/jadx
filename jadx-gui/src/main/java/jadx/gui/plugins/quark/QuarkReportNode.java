@@ -12,16 +12,14 @@ import org.apache.commons.text.StringEscapeUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-
 import jadx.api.ICodeInfo;
 import jadx.api.impl.SimpleCodeInfo;
+import jadx.core.utils.GsonUtils;
 import jadx.gui.treemodel.JClass;
 import jadx.gui.treemodel.JNode;
-import jadx.gui.ui.TabbedPane;
 import jadx.gui.ui.panel.ContentPanel;
 import jadx.gui.ui.panel.HtmlPanel;
+import jadx.gui.ui.tab.TabbedPane;
 import jadx.gui.utils.UiUtils;
 
 public class QuarkReportNode extends JNode {
@@ -29,8 +27,6 @@ public class QuarkReportNode extends JNode {
 	private static final long serialVersionUID = -766800957202637021L;
 
 	private static final Logger LOG = LoggerFactory.getLogger(QuarkReportNode.class);
-
-	private static final Gson GSON = new GsonBuilder().create();
 
 	private static final ImageIcon ICON = UiUtils.openSvgIcon("ui/quark");
 
@@ -62,7 +58,7 @@ public class QuarkReportNode extends JNode {
 		try {
 			QuarkReportData data;
 			try (BufferedReader reader = Files.newBufferedReader(reportFile)) {
-				data = GSON.fromJson(reader, QuarkReportData.class);
+				data = GsonUtils.buildGson().fromJson(reader, QuarkReportData.class);
 			}
 			data.validate();
 			return new QuarkReportPanel(tabbedPane, this, data);

@@ -19,12 +19,14 @@ import jadx.api.CommentsLevel;
 import jadx.api.ICodeInfo;
 import jadx.api.ICodeWriter;
 import jadx.api.JadxArgs;
+import jadx.api.args.IntegerFormat;
 import jadx.api.metadata.annotations.NodeEnd;
 import jadx.api.plugins.input.data.AccessFlags;
 import jadx.api.plugins.input.data.annotations.EncodedType;
 import jadx.api.plugins.input.data.annotations.EncodedValue;
 import jadx.api.plugins.input.data.attributes.JadxAttrType;
 import jadx.core.Consts;
+import jadx.core.codegen.utils.CodeGenUtils;
 import jadx.core.dex.attributes.AFlag;
 import jadx.core.dex.attributes.AType;
 import jadx.core.dex.attributes.FieldInitInsnAttr;
@@ -44,7 +46,6 @@ import jadx.core.dex.nodes.FieldNode;
 import jadx.core.dex.nodes.InsnNode;
 import jadx.core.dex.nodes.MethodNode;
 import jadx.core.dex.nodes.RootNode;
-import jadx.core.utils.CodeGenUtils;
 import jadx.core.utils.EncodedValueUtils;
 import jadx.core.utils.Utils;
 import jadx.core.utils.android.AndroidResourcesUtils;
@@ -59,6 +60,7 @@ public class ClassGen {
 	private final boolean fallback;
 	private final boolean useImports;
 	private final boolean showInconsistentCode;
+	private final IntegerFormat integerFormat;
 
 	private final Set<ClassInfo> imports = new HashSet<>();
 	private int clsDeclOffset;
@@ -69,19 +71,22 @@ public class ClassGen {
 	private NameGen outerNameGen;
 
 	public ClassGen(ClassNode cls, JadxArgs jadxArgs) {
-		this(cls, null, jadxArgs.isUseImports(), jadxArgs.isFallbackMode(), jadxArgs.isShowInconsistentCode());
+		this(cls, null, jadxArgs.isUseImports(), jadxArgs.isFallbackMode(), jadxArgs.isShowInconsistentCode(), jadxArgs.getIntegerFormat());
 	}
 
 	public ClassGen(ClassNode cls, ClassGen parentClsGen) {
-		this(cls, parentClsGen, parentClsGen.useImports, parentClsGen.fallback, parentClsGen.showInconsistentCode);
+		this(cls, parentClsGen, parentClsGen.useImports, parentClsGen.fallback, parentClsGen.showInconsistentCode,
+				parentClsGen.integerFormat);
 	}
 
-	public ClassGen(ClassNode cls, ClassGen parentClsGen, boolean useImports, boolean fallback, boolean showBadCode) {
+	public ClassGen(ClassNode cls, ClassGen parentClsGen, boolean useImports, boolean fallback, boolean showBadCode,
+			IntegerFormat integerFormat) {
 		this.cls = cls;
 		this.parentGen = parentClsGen;
 		this.fallback = fallback;
 		this.useImports = useImports;
 		this.showInconsistentCode = showBadCode;
+		this.integerFormat = integerFormat;
 
 		this.annotationGen = new AnnotationGen(cls, this);
 	}
@@ -91,14 +96,29 @@ public class ClassGen {
 	}
 
 	public ICodeInfo makeClass() throws CodegenException {
+		if (cls.contains(AFlag.PACKAGE_INFO)) {
+			return makePackageInfo();
+		}
 		ICodeWriter clsBody = cls.root().makeCodeWriter();
 		addClassCode(clsBody);
 
 		ICodeWriter clsCode = cls.root().makeCodeWriter();
-		if (!"".equals(cls.getPackage())) {
+		addPackage(clsCode);
+		clsCode.newLine();
+		addImports(clsCode);
+		clsCode.add(clsBody);
+		return clsCode.finish();
+	}
+
+	private void addPackage(ICodeWriter clsCode) {
+		if (cls.getPackage().isEmpty()) {
+			clsCode.add("// default package");
+		} else {
 			clsCode.add("package ").add(cls.getPackage()).add(';');
-			clsCode.newLine();
 		}
+	}
+
+	private void addImports(ICodeWriter clsCode) {
 		int importsCount = imports.size();
 		if (importsCount != 0) {
 			List<ClassInfo> sortedImports = new ArrayList<>(imports);
@@ -115,8 +135,17 @@ public class ClassGen {
 			clsCode.newLine();
 			imports.clear();
 		}
-		clsCode.add(clsBody);
-		return clsCode.finish();
+	}
+
+	private ICodeInfo makePackageInfo() {
+		ICodeWriter code = cls.root().makeCodeWriter();
+		annotationGen.addForClass(code);
+		code.newLine();
+		code.attachDefinition(cls);
+		addPackage(code);
+		code.newLine();
+		addImports(code);
+		return code.finish();
 	}
 
 	public void addClassCode(ICodeWriter code) throws CodegenException {
@@ -318,6 +347,10 @@ public class ClassGen {
 	 * Additional checks for inlined methods
 	 */
 	private boolean skipMethod(MethodNode mth) {
+		if (cls.root().getArgs().getDecompilationMode().isSpecial()) {
+			// show all methods for special decompilation modes
+			return false;
+		}
 		MethodInlineAttr inlineAttr = mth.get(AType.METHOD_INLINE);
 		if (inlineAttr == null || inlineAttr.notNeeded()) {
 			return false;
@@ -392,18 +425,22 @@ public class ClassGen {
 		if (f.contains(AFlag.DONT_GENERATE)) {
 			return;
 		}
+		if (f.contains(JadxAttrType.ANNOTATION_LIST)
+				|| f.contains(AType.JADX_COMMENTS)
+				|| f.contains(AType.CODE_COMMENTS)
+				|| f.getFieldInfo().hasAlias()) {
+			code.newLine();
+		}
 		if (Consts.DEBUG_USAGE) {
 			addFieldUsageInfo(code, f);
+		}
+		if (f.getFieldInfo().hasAlias()) {
+			CodeGenUtils.addRenamedComment(code, f, f.getName());
 		}
 		CodeGenUtils.addComments(code, f);
 		annotationGen.addForField(code, f);
 
-		boolean addInfoComments = f.checkCommentsLevel(CommentsLevel.INFO);
-		if (f.getFieldInfo().isRenamed() && addInfoComments) {
-			code.newLine();
-			CodeGenUtils.addRenamedComment(code, f, f.getName());
-		}
-		code.startLine(f.getAccessFlags().makeString(addInfoComments));
+		code.startLine(f.getAccessFlags().makeString(f.checkCommentsLevel(CommentsLevel.INFO)));
 		useType(code, f.getType());
 		code.add(' ');
 		code.attachDefinition(f);
@@ -424,10 +461,7 @@ public class ClassGen {
 					Object val = EncodedValueUtils.convertToConstValue(constVal);
 					if (val instanceof LiteralArg) {
 						long lit = ((LiteralArg) val).getLiteral();
-						if (!AndroidResourcesUtils.handleResourceFieldValue(cls, code, lit, f.getType())) {
-							// force literal type to be same as field (java bytecode can use different type)
-							code.add(TypeGen.literalToString(lit, f.getType(), cls, fallback));
-						}
+						code.add(getIntegerString(lit, f.getType()));
 					} else {
 						annotationGen.encodeValue(cls.root(), code, constVal);
 					}
@@ -435,6 +469,14 @@ public class ClassGen {
 			}
 		}
 		code.add(';');
+	}
+
+	private String getIntegerString(long lit, ArgType type) {
+		if (integerFormat != IntegerFormat.DECIMAL && AndroidResourcesUtils.isResourceFieldValue(cls, type)) {
+			return String.format("0x%08x", lit);
+		}
+		// force literal type to be same as field (java bytecode can use different type)
+		return TypeGen.literalToString(lit, type, cls, fallback);
 	}
 
 	private boolean isFieldsPresents() {
@@ -480,7 +522,7 @@ public class ClassGen {
 			}
 			code.add(';');
 			if (isFieldsPresents()) {
-				code.startLine();
+				code.newLine();
 			}
 		}
 	}
@@ -614,6 +656,13 @@ public class ClassGen {
 		code.add(clsName);
 	}
 
+	public void addClsShortNameForced(ICodeWriter code, ClassInfo classInfo) {
+		code.add(classInfo.getAliasShortName());
+		if (!isBothClassesInOneTopClass(cls.getClassInfo(), classInfo)) {
+			addImport(classInfo);
+		}
+	}
+
 	private String useClassInternal(ClassInfo useCls, ClassInfo extClsInfo) {
 		String fullName = extClsInfo.getAliasFullName();
 		if (fallback || !useImports) {
@@ -621,6 +670,10 @@ public class ClassGen {
 		}
 		String shortName = extClsInfo.getAliasShortName();
 		if (useCls.equals(extClsInfo)) {
+			return shortName;
+		}
+		if (extClsInfo.getAliasPkg().isEmpty()) {
+			// omit import for default package
 			return shortName;
 		}
 		if (isClassInnerFor(useCls, extClsInfo)) {
@@ -642,10 +695,6 @@ public class ClassGen {
 		}
 		// don't add import if this class from same package
 		if (extClsInfo.getPackage().equals(useCls.getPackage()) && !extClsInfo.isInner()) {
-			return shortName;
-		}
-		// ignore classes from default package
-		if (extClsInfo.isDefaultPackage()) {
 			return shortName;
 		}
 		if (extClsInfo.getAliasPkg().equals(useCls.getAliasPkg())) {

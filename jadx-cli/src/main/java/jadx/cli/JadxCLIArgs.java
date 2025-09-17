@@ -1,6 +1,8 @@
 package jadx.cli;
 
-import java.util.ArrayList;
+import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
@@ -12,6 +14,8 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.jetbrains.annotations.Nullable;
+
 import com.beust.jcommander.DynamicParameter;
 import com.beust.jcommander.IStringConverter;
 import com.beust.jcommander.Parameter;
@@ -22,15 +26,20 @@ import jadx.api.JadxArgs;
 import jadx.api.JadxArgs.RenameEnum;
 import jadx.api.JadxArgs.UseKotlinMethodsForVarNames;
 import jadx.api.JadxDecompiler;
-import jadx.api.args.DeobfuscationMapFileMode;
+import jadx.api.args.GeneratedRenamesMappingFileMode;
+import jadx.api.args.IntegerFormat;
 import jadx.api.args.ResourceNameSource;
-import jadx.core.utils.exceptions.JadxException;
+import jadx.api.args.UseSourceNameAsClassNameAlias;
+import jadx.api.args.UserRenamesMappingsMode;
+import jadx.core.deobf.conditions.DeobfWhitelist;
+import jadx.core.export.ExportGradleType;
+import jadx.core.utils.exceptions.JadxArgsValidateException;
 import jadx.core.utils.files.FileUtils;
 
 public class JadxCLIArgs {
 
-	@Parameter(description = "<input files> (.apk, .dex, .jar, .class, .smali, .zip, .aar, .arsc, .aab)")
-	protected List<String> files = new ArrayList<>(1);
+	@Parameter(description = "<input files> (.apk, .dex, .jar, .class, .smali, .zip, .aar, .arsc, .aab, .xapk, .apkm, .jadx.kts)")
+	protected List<String> files = Collections.emptyList();
 
 	@Parameter(names = { "-d", "--output-dir" }, description = "output directory")
 	protected String outDir;
@@ -47,6 +56,9 @@ public class JadxCLIArgs {
 	@Parameter(names = { "-s", "--no-src" }, description = "do not decompile source code")
 	protected boolean skipSources = false;
 
+	@Parameter(names = { "-j", "--threads-count" }, description = "processing threads count")
+	protected int threadsCount = JadxArgs.DEFAULT_THREADS_COUNT;
+
 	@Parameter(names = { "--single-class" }, description = "decompile a single class, full name, raw or alias")
 	protected String singleClass = null;
 
@@ -56,11 +68,19 @@ public class JadxCLIArgs {
 	@Parameter(names = { "--output-format" }, description = "can be 'java' or 'json'")
 	protected String outputFormat = "java";
 
-	@Parameter(names = { "-e", "--export-gradle" }, description = "save as android gradle project")
+	@Parameter(names = { "-e", "--export-gradle" }, description = "save as gradle project (set '--export-gradle-type' to 'auto')")
 	protected boolean exportAsGradleProject = false;
 
-	@Parameter(names = { "-j", "--threads-count" }, description = "processing threads count")
-	protected int threadsCount = JadxArgs.DEFAULT_THREADS_COUNT;
+	@Parameter(
+			names = { "--export-gradle-type" },
+			description = "Gradle project template for export:"
+					+ "\n 'auto' - detect automatically"
+					+ "\n 'android-app' - Android Application (apk)"
+					+ "\n 'android-library' - Android Library (aar)"
+					+ "\n 'simple-java' - simple Java",
+			converter = ExportGradleTypeConverter.class
+	)
+	protected @Nullable ExportGradleType exportGradleType = null;
 
 	@Parameter(
 			names = { "-m", "--decompilation-mode" },
@@ -76,10 +96,13 @@ public class JadxCLIArgs {
 	@Parameter(names = { "--show-bad-code" }, description = "show inconsistent code (incorrectly decompiled)")
 	protected boolean showInconsistentCode = false;
 
+	@Parameter(names = { "--no-xml-pretty-print" }, description = "do not prettify XML")
+	protected boolean skipXmlPrettyPrint = false;
+
 	@Parameter(names = { "--no-imports" }, description = "disable use of imports, always write entire package name")
 	protected boolean useImports = true;
 
-	@Parameter(names = { "--no-debug-info" }, description = "disable debug info")
+	@Parameter(names = { "--no-debug-info" }, description = "disable debug info parsing and processing")
 	protected boolean debugInfo = true;
 
 	@Parameter(names = { "--add-debug-lines" }, description = "add comments with debug line numbers if available")
@@ -91,11 +114,17 @@ public class JadxCLIArgs {
 	@Parameter(names = { "--no-inline-methods" }, description = "disable methods inline")
 	protected boolean inlineMethods = true;
 
+	@Parameter(names = { "--no-move-inner-classes" }, description = "disable move inner classes into parent")
+	protected boolean moveInnerClasses = true;
+
 	@Parameter(names = { "--no-inline-kotlin-lambda" }, description = "disable inline for Kotlin lambdas")
 	protected boolean allowInlineKotlinLambda = true;
 
 	@Parameter(names = "--no-finally", description = "don't extract finally block")
 	protected boolean extractFinally = true;
+
+	@Parameter(names = "--no-restore-switch-over-string", description = "don't restore switch over string")
+	protected boolean restoreSwitchOverString = true;
 
 	@Parameter(names = { "--no-generate-kotlin-metadata" }, description = "disable generating kotlin metadata")
 	protected boolean generateKotlinMetadata = true;
@@ -109,6 +138,22 @@ public class JadxCLIArgs {
 	@Parameter(names = { "--respect-bytecode-access-modifiers" }, description = "don't change original access modifiers")
 	protected boolean respectBytecodeAccessModifiers = false;
 
+	@Parameter(
+			names = { "--mappings-path" },
+			description = "deobfuscation mappings file or directory. Allowed formats: Tiny and Tiny v2 (both '.tiny'), Enigma (.mapping) or Enigma directory"
+	)
+	protected Path userRenamesMappingsPath;
+
+	@Parameter(
+			names = { "--mappings-mode" },
+			description = "set mode for handling the deobfuscation mapping file:"
+					+ "\n 'read' - just read, user can always save manually (default)"
+					+ "\n 'read-and-autosave-every-change' - read and autosave after every change"
+					+ "\n 'read-and-autosave-before-closing' - read and autosave before exiting the app or closing the project"
+					+ "\n 'ignore' - don't read or save (can be used to skip loading mapping files referenced in the project file)"
+	)
+	protected UserRenamesMappingsMode userRenamesMappingsMode = UserRenamesMappingsMode.getDefault();
+
 	@Parameter(names = { "--deobf" }, description = "activate deobfuscation")
 	protected boolean deobfuscationOn = false;
 
@@ -119,27 +164,38 @@ public class JadxCLIArgs {
 	protected int deobfuscationMaxLength = 64;
 
 	@Parameter(
-			names = { "--deobf-cfg-file" },
-			description = "deobfuscation map file, default: same dir and name as input file with '.jobf' extension"
+			names = { "--deobf-whitelist" },
+			description = "space separated list of classes (full name) and packages (ends with '.*') to exclude from deobfuscation"
 	)
-	protected String deobfuscationMapFile;
+	protected String deobfuscationWhitelistStr = DeobfWhitelist.DEFAULT_STR;
+
+	@Parameter(
+			names = { "--deobf-cfg-file" },
+			description = "deobfuscation mappings file used for JADX auto-generated names (in the JOBF file format),"
+					+ " default: same dir and name as input file with '.jobf' extension"
+	)
+	protected String generatedRenamesMappingFile;
 
 	@Parameter(
 			names = { "--deobf-cfg-file-mode" },
-			description = "set mode for handle deobfuscation map file:"
+			description = "set mode for handling the JADX auto-generated names' deobfuscation map file:"
 					+ "\n 'read' - read if found, don't save (default)"
 					+ "\n 'read-or-save' - read if found, save otherwise (don't overwrite)"
 					+ "\n 'overwrite' - don't read, always save"
 					+ "\n 'ignore' - don't read and don't save",
 			converter = DeobfuscationMapFileModeConverter.class
 	)
-	protected DeobfuscationMapFileMode deobfuscationMapFileMode = DeobfuscationMapFileMode.READ;
+	protected GeneratedRenamesMappingFileMode generatedRenamesMappingFileMode = GeneratedRenamesMappingFileMode.getDefault();
 
-	@Parameter(names = { "--deobf-use-sourcename" }, description = "use source file name as class name alias")
-	protected boolean deobfuscationUseSourceNameAsAlias = false;
-
-	@Parameter(names = { "--deobf-parse-kotlin-metadata" }, description = "parse kotlin metadata to class and package names")
-	protected boolean deobfuscationParseKotlinMetadata = false;
+	@SuppressWarnings("DeprecatedIsStillUsed")
+	@Parameter(
+			names = { "--deobf-use-sourcename" },
+			description = "use source file name as class name alias."
+					+ "\nDEPRECATED, use \"--use-source-name-as-class-name-alias\" instead",
+			hidden = true
+	)
+	@Deprecated
+	protected Boolean deobfuscationUseSourceNameAsAlias = null;
 
 	@Parameter(
 			names = { "--deobf-res-name-source" },
@@ -152,11 +208,33 @@ public class JadxCLIArgs {
 	protected ResourceNameSource resourceNameSource = ResourceNameSource.AUTO;
 
 	@Parameter(
+			names = { "--use-source-name-as-class-name-alias" },
+			description = "use source name as class name alias:"
+					+ "\n 'always' - always use source name if it's available"
+					+ "\n 'if-better' - use source name if it seems better than the current one"
+					+ "\n 'never' - never use source name, even if it's available",
+			converter = UseSourceNameAsClassNameConverter.class
+	)
+	protected UseSourceNameAsClassNameAlias useSourceNameAsClassNameAlias = null;
+
+	@Parameter(
+			names = { "--source-name-repeat-limit" },
+			description = "allow using source name if it appears less than a limit number"
+	)
+	protected int sourceNameRepeatLimit = 10;
+
+	@Parameter(
 			names = { "--use-kotlin-methods-for-var-names" },
 			description = "use kotlin intrinsic methods to rename variables, values: disable, apply, apply-and-hide",
 			converter = UseKotlinMethodsForVarNamesConverter.class
 	)
 	protected UseKotlinMethodsForVarNames useKotlinMethodsForVarNames = UseKotlinMethodsForVarNames.APPLY;
+
+	@Parameter(
+			names = { "--use-headers-for-detect-resource-extensions" },
+			description = "Use headers for detect resource extensions if resource obfuscated"
+	)
+	protected boolean useHeadersForDetectResourceExtensions = false;
 
 	@Parameter(
 			names = { "--rename-flags" },
@@ -169,6 +247,19 @@ public class JadxCLIArgs {
 			converter = RenameConverter.class
 	)
 	protected Set<RenameEnum> renameFlags = EnumSet.allOf(RenameEnum.class);
+
+	@Parameter(
+			names = { "--integer-format" },
+			description = "how integers are displayed:"
+					+ "\n 'auto' - automatically select (default)"
+					+ "\n 'decimal' - use decimal"
+					+ "\n 'hexadecimal' - use hexadecimal",
+			converter = IntegerFormatConverter.class
+	)
+	protected IntegerFormat integerFormat = IntegerFormat.AUTO;
+
+	@Parameter(names = { "--type-update-limit" }, description = "type update limit count (per one instruction)")
+	protected int typeUpdatesLimitCount = 10;
 
 	@Parameter(names = { "--fs-case-sensitive" }, description = "treat filesystem as case sensitive, false by default")
 	protected boolean fsCaseSensitive = false;
@@ -205,6 +296,9 @@ public class JadxCLIArgs {
 	@Parameter(names = { "-q", "--quiet" }, description = "turn off output (set --log-level to QUIET)")
 	protected boolean quiet = false;
 
+	@Parameter(names = { "--disable-plugins" }, description = "comma separated list of plugin ids to disable")
+	protected String disablePlugins = "";
+
 	@Parameter(names = { "--version" }, description = "print jadx version")
 	protected boolean printVersion = false;
 
@@ -215,28 +309,14 @@ public class JadxCLIArgs {
 	protected Map<String, String> pluginOptions = new HashMap<>();
 
 	public boolean processArgs(String[] args) {
-		JCommanderWrapper<JadxCLIArgs> jcw = new JCommanderWrapper<>(this);
+		JCommanderWrapper jcw = new JCommanderWrapper(this);
 		return jcw.parse(args) && process(jcw);
 	}
 
-	/**
-	 * Set values only for options provided in cmd.
-	 * Used to merge saved options and options passed in command line.
-	 */
-	public boolean overrideProvided(String[] args) {
-		JCommanderWrapper<JadxCLIArgs> jcw = new JCommanderWrapper<>(newInstance());
-		if (!jcw.parse(args)) {
+	public boolean process(JCommanderWrapper jcw) {
+		if (jcw.processCommands()) {
 			return false;
 		}
-		jcw.overrideProvided(this);
-		return process(jcw);
-	}
-
-	protected JadxCLIArgs newInstance() {
-		return new JadxCLIArgs();
-	}
-
-	private boolean process(JCommanderWrapper<JadxCLIArgs> jcw) {
 		if (printHelp) {
 			jcw.printUsage();
 			return false;
@@ -245,14 +325,13 @@ public class JadxCLIArgs {
 			System.out.println(JadxDecompiler.getVersion());
 			return false;
 		}
-		try {
-			if (threadsCount <= 0) {
-				throw new JadxException("Threads count must be positive, got: " + threadsCount);
+		if (threadsCount <= 0) {
+			throw new JadxArgsValidateException("Threads count must be positive, got: " + threadsCount);
+		}
+		for (String fileName : files) {
+			if (fileName.startsWith("-")) {
+				throw new JadxArgsValidateException("Unknown option: " + fileName);
 			}
-		} catch (JadxException e) {
-			System.err.println("ERROR: " + e.getMessage());
-			jcw.printUsage();
-			return false;
 		}
 		return true;
 	}
@@ -276,36 +355,55 @@ public class JadxCLIArgs {
 		args.setCfgOutput(cfgOutput);
 		args.setRawCFGOutput(rawCfgOutput);
 		args.setReplaceConsts(replaceConsts);
+		if (userRenamesMappingsPath != null) {
+			args.setUserRenamesMappingsPath(userRenamesMappingsPath);
+		}
+		args.setUserRenamesMappingsMode(userRenamesMappingsMode);
 		args.setDeobfuscationOn(deobfuscationOn);
-		args.setDeobfuscationMapFile(FileUtils.toFile(deobfuscationMapFile));
-		args.setDeobfuscationMapFileMode(deobfuscationMapFileMode);
+		args.setGeneratedRenamesMappingFile(FileUtils.toFile(generatedRenamesMappingFile));
+		args.setGeneratedRenamesMappingFileMode(generatedRenamesMappingFileMode);
 		args.setDeobfuscationMinLength(deobfuscationMinLength);
 		args.setDeobfuscationMaxLength(deobfuscationMaxLength);
-		args.setUseSourceNameAsClassAlias(deobfuscationUseSourceNameAsAlias);
-		args.setParseKotlinMetadata(deobfuscationParseKotlinMetadata);
+		args.setDeobfuscationWhitelist(Arrays.asList(deobfuscationWhitelistStr.split(" ")));
+		args.setUseSourceNameAsClassNameAlias(getUseSourceNameAsClassNameAlias());
+		args.setUseHeadersForDetectResourceExtensions(useHeadersForDetectResourceExtensions);
+		args.setSourceNameRepeatLimit(sourceNameRepeatLimit);
 		args.setUseKotlinMethodsForVarNames(useKotlinMethodsForVarNames);
 		args.setResourceNameSource(resourceNameSource);
 		args.setEscapeUnicode(escapeUnicode);
 		args.setRespectBytecodeAccModifiers(respectBytecodeAccessModifiers);
-		args.setExportAsGradleProject(exportAsGradleProject);
+		args.setExportGradleType(exportGradleType);
+		if (exportAsGradleProject && exportGradleType == null) {
+			args.setExportGradleType(ExportGradleType.AUTO);
+		}
+		args.setSkipXmlPrettyPrint(skipXmlPrettyPrint);
 		args.setUseImports(useImports);
 		args.setDebugInfo(debugInfo);
 		args.setInsertDebugLines(addDebugLines);
 		args.setInlineAnonymousClasses(inlineAnonymousClasses);
 		args.setInlineMethods(inlineMethods);
+		args.setMoveInnerClasses(moveInnerClasses);
 		args.setAllowInlineKotlinLambda(allowInlineKotlinLambda);
 		args.setExtractFinally(extractFinally);
+		args.setRestoreSwitchOverString(restoreSwitchOverString);
 		args.setGenerateKotlinMetadata(generateKotlinMetadata);
 		args.setRenameFlags(renameFlags);
 		args.setFsCaseSensitive(fsCaseSensitive);
 		args.setCommentsLevel(commentsLevel);
+		args.setIntegerFormat(integerFormat);
+		args.setTypeUpdatesLimitCount(typeUpdatesLimitCount);
 		args.setUseDxInput(useDx);
 		args.setPluginOptions(pluginOptions);
+		args.setDisabledPlugins(Arrays.stream(disablePlugins.split(",")).map(String::trim).collect(Collectors.toSet()));
 		return args;
 	}
 
 	public List<String> getFiles() {
 		return files;
+	}
+
+	public void setFiles(List<String> files) {
+		this.files = files;
 	}
 
 	public String getOutDir() {
@@ -376,12 +474,28 @@ public class JadxCLIArgs {
 		return inlineMethods;
 	}
 
+	public boolean isMoveInnerClasses() {
+		return moveInnerClasses;
+	}
+
 	public boolean isAllowInlineKotlinLambda() {
 		return allowInlineKotlinLambda;
 	}
 
 	public boolean isExtractFinally() {
 		return extractFinally;
+	}
+
+	public boolean isRestoreSwitchOverString() {
+		return restoreSwitchOverString;
+	}
+
+	public Path getUserRenamesMappingsPath() {
+		return userRenamesMappingsPath;
+	}
+
+	public UserRenamesMappingsMode getUserRenamesMappingsMode() {
+		return userRenamesMappingsMode;
 	}
 
 	public boolean isDeobfuscationOn() {
@@ -396,20 +510,39 @@ public class JadxCLIArgs {
 		return deobfuscationMaxLength;
 	}
 
-	public String getDeobfuscationMapFile() {
-		return deobfuscationMapFile;
+	public String getDeobfuscationWhitelistStr() {
+		return deobfuscationWhitelistStr;
 	}
 
-	public DeobfuscationMapFileMode getDeobfuscationMapFileMode() {
-		return deobfuscationMapFileMode;
+	public String getGeneratedRenamesMappingFile() {
+		return generatedRenamesMappingFile;
 	}
 
+	public GeneratedRenamesMappingFileMode getGeneratedRenamesMappingFileMode() {
+		return generatedRenamesMappingFileMode;
+	}
+
+	public UseSourceNameAsClassNameAlias getUseSourceNameAsClassNameAlias() {
+		if (useSourceNameAsClassNameAlias != null) {
+			return useSourceNameAsClassNameAlias;
+		} else if (deobfuscationUseSourceNameAsAlias != null) {
+			// noinspection deprecation
+			return UseSourceNameAsClassNameAlias.create(deobfuscationUseSourceNameAsAlias);
+		} else {
+			return UseSourceNameAsClassNameAlias.getDefault();
+		}
+	}
+
+	public int getSourceNameRepeatLimit() {
+		return sourceNameRepeatLimit;
+	}
+
+	/**
+	 * @deprecated Use {@link #getUseSourceNameAsClassNameAlias()} instead.
+	 */
+	@Deprecated
 	public boolean isDeobfuscationUseSourceNameAsAlias() {
-		return deobfuscationUseSourceNameAsAlias;
-	}
-
-	public boolean isDeobfuscationParseKotlinMetadata() {
-		return deobfuscationParseKotlinMetadata;
+		return getUseSourceNameAsClassNameAlias().toBoolean();
 	}
 
 	public ResourceNameSource getResourceNameSource() {
@@ -418,6 +551,14 @@ public class JadxCLIArgs {
 
 	public UseKotlinMethodsForVarNames getUseKotlinMethodsForVarNames() {
 		return useKotlinMethodsForVarNames;
+	}
+
+	public IntegerFormat getIntegerFormat() {
+		return integerFormat;
+	}
+
+	public int getTypeUpdatesLimitCount() {
+		return typeUpdatesLimitCount;
 	}
 
 	public boolean isEscapeUnicode() {
@@ -444,6 +585,10 @@ public class JadxCLIArgs {
 		return exportAsGradleProject;
 	}
 
+	public boolean isSkipXmlPrettyPrint() {
+		return skipXmlPrettyPrint;
+	}
+
 	public boolean isRenameCaseSensitive() {
 		return renameFlags.contains(RenameEnum.CASE);
 	}
@@ -460,6 +605,10 @@ public class JadxCLIArgs {
 		return fsCaseSensitive;
 	}
 
+	public boolean isUseHeadersForDetectResourceExtensions() {
+		return useHeadersForDetectResourceExtensions;
+	}
+
 	public CommentsLevel getCommentsLevel() {
 		return commentsLevel;
 	}
@@ -470,6 +619,10 @@ public class JadxCLIArgs {
 
 	public Map<String, String> getPluginOptions() {
 		return pluginOptions;
+	}
+
+	public String getDisablePlugins() {
+		return disablePlugins;
 	}
 
 	static class RenameConverter implements IStringConverter<Set<RenameEnum>> {
@@ -491,8 +644,8 @@ public class JadxCLIArgs {
 			for (String s : value.split(",")) {
 				try {
 					set.add(RenameEnum.valueOf(s.trim().toUpperCase(Locale.ROOT)));
-				} catch (IllegalArgumentException e) {
-					throw new IllegalArgumentException(
+				} catch (Exception e) {
+					throw new JadxArgsValidateException(
 							'\'' + s + "' is unknown for parameter " + paramName
 									+ ", possible values are " + enumValuesString(RenameEnum.values()));
 				}
@@ -513,9 +666,9 @@ public class JadxCLIArgs {
 		}
 	}
 
-	public static class DeobfuscationMapFileModeConverter extends BaseEnumConverter<DeobfuscationMapFileMode> {
+	public static class DeobfuscationMapFileModeConverter extends BaseEnumConverter<GeneratedRenamesMappingFileMode> {
 		public DeobfuscationMapFileModeConverter() {
-			super(DeobfuscationMapFileMode::valueOf, DeobfuscationMapFileMode::values);
+			super(GeneratedRenamesMappingFileMode::valueOf, GeneratedRenamesMappingFileMode::values);
 		}
 	}
 
@@ -525,15 +678,33 @@ public class JadxCLIArgs {
 		}
 	}
 
+	public static class UseSourceNameAsClassNameConverter extends BaseEnumConverter<UseSourceNameAsClassNameAlias> {
+		public UseSourceNameAsClassNameConverter() {
+			super(UseSourceNameAsClassNameAlias::valueOf, UseSourceNameAsClassNameAlias::values);
+		}
+	}
+
 	public static class DecompilationModeConverter extends BaseEnumConverter<DecompilationMode> {
 		public DecompilationModeConverter() {
 			super(DecompilationMode::valueOf, DecompilationMode::values);
 		}
 	}
 
+	public static class ExportGradleTypeConverter extends BaseEnumConverter<ExportGradleType> {
+		public ExportGradleTypeConverter() {
+			super(ExportGradleType::valueOf, ExportGradleType::values);
+		}
+	}
+
 	public static class LogLevelConverter extends BaseEnumConverter<LogHelper.LogLevelEnum> {
 		public LogLevelConverter() {
 			super(LogHelper.LogLevelEnum::valueOf, LogHelper.LogLevelEnum::values);
+		}
+	}
+
+	public static class IntegerFormatConverter extends BaseEnumConverter<IntegerFormat> {
+		public IntegerFormatConverter() {
+			super(IntegerFormat::valueOf, IntegerFormat::values);
 		}
 	}
 
@@ -551,7 +722,7 @@ public class JadxCLIArgs {
 			try {
 				return parse.apply(stringAsEnumName(value));
 			} catch (Exception e) {
-				throw new IllegalArgumentException(
+				throw new JadxArgsValidateException(
 						'\'' + value + "' is unknown, possible values are: " + enumValuesString(values.get()));
 			}
 		}

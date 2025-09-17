@@ -25,10 +25,9 @@ public final class BlockNode extends AttrNode implements IBlock, Comparable<Bloc
 	private final int cid;
 
 	/**
-	 * ID linked to position in blocks list (easier to use BitSet)
-	 * TODO: rename to avoid confusion
+	 * Position in blocks list (easier to use BitSet)
 	 */
-	private int id;
+	private int pos;
 
 	/**
 	 * Offset in methods bytecode
@@ -47,6 +46,11 @@ public final class BlockNode extends AttrNode implements IBlock, Comparable<Bloc
 	private BitSet doms = EmptyBitSet.EMPTY;
 
 	/**
+	 * Post dominators, excluding self
+	 */
+	private BitSet postDoms = EmptyBitSet.EMPTY;
+
+	/**
 	 * Dominance frontier
 	 */
 	private BitSet domFrontier;
@@ -57,13 +61,18 @@ public final class BlockNode extends AttrNode implements IBlock, Comparable<Bloc
 	private BlockNode idom;
 
 	/**
+	 * Immediate post dominator
+	 */
+	private BlockNode iPostDom;
+
+	/**
 	 * Blocks on which dominates this block
 	 */
 	private List<BlockNode> dominatesOn = new ArrayList<>(3);
 
-	public BlockNode(int cid, int id, int offset) {
+	public BlockNode(int cid, int pos, int offset) {
 		this.cid = cid;
-		this.id = id;
+		this.pos = pos;
 		this.startOffset = offset;
 	}
 
@@ -71,12 +80,20 @@ public final class BlockNode extends AttrNode implements IBlock, Comparable<Bloc
 		return cid;
 	}
 
-	void setId(int id) {
-		this.id = id;
+	void setPos(int id) {
+		this.pos = id;
 	}
 
+	/**
+	 * Deprecated. Use {@link #getPos()}.
+	 */
+	@Deprecated
 	public int getId() {
-		return id;
+		return pos;
+	}
+
+	public int getPos() {
+		return pos;
 	}
 
 	public List<BlockNode> getPredecessors() {
@@ -93,6 +110,13 @@ public final class BlockNode extends AttrNode implements IBlock, Comparable<Bloc
 
 	public void updateCleanSuccessors() {
 		cleanSuccessors = cleanSuccessors(this);
+	}
+
+	public static void updateBlockPositions(List<BlockNode> blocks) {
+		int count = blocks.size();
+		for (int i = 0; i < count; i++) {
+			blocks.get(i).setPos(i);
+		}
 	}
 
 	public void lock() {
@@ -151,7 +175,7 @@ public final class BlockNode extends AttrNode implements IBlock, Comparable<Bloc
 	 * Check if 'block' dominated on this node
 	 */
 	public boolean isDominator(BlockNode block) {
-		return doms.get(block.getId());
+		return doms.get(block.getPos());
 	}
 
 	/**
@@ -163,6 +187,14 @@ public final class BlockNode extends AttrNode implements IBlock, Comparable<Bloc
 
 	public void setDoms(BitSet doms) {
 		this.doms = doms;
+	}
+
+	public BitSet getPostDoms() {
+		return postDoms;
+	}
+
+	public void setPostDoms(BitSet postDoms) {
+		this.postDoms = postDoms;
 	}
 
 	public BitSet getDomFrontier() {
@@ -184,6 +216,14 @@ public final class BlockNode extends AttrNode implements IBlock, Comparable<Bloc
 		this.idom = idom;
 	}
 
+	public BlockNode getIPostDom() {
+		return iPostDom;
+	}
+
+	public void setIPostDom(BlockNode iPostDom) {
+		this.iPostDom = iPostDom;
+	}
+
 	public List<BlockNode> getDominatesOn() {
 		return dominatesOn;
 	}
@@ -200,13 +240,17 @@ public final class BlockNode extends AttrNode implements IBlock, Comparable<Bloc
 		return contains(AFlag.RETURN);
 	}
 
+	public boolean isMthExitBlock() {
+		return contains(AFlag.MTH_EXIT_BLOCK);
+	}
+
 	public boolean isEmpty() {
 		return instructions.isEmpty();
 	}
 
 	@Override
 	public int hashCode() {
-		return startOffset;
+		return cid;
 	}
 
 	@Override
@@ -218,7 +262,7 @@ public final class BlockNode extends AttrNode implements IBlock, Comparable<Bloc
 			return false;
 		}
 		BlockNode other = (BlockNode) obj;
-		return cid == other.cid && startOffset == other.startOffset;
+		return cid == other.cid;
 	}
 
 	@Override
@@ -228,7 +272,7 @@ public final class BlockNode extends AttrNode implements IBlock, Comparable<Bloc
 
 	@Override
 	public String baseString() {
-		return Integer.toString(id);
+		return Integer.toString(cid);
 	}
 
 	@Override

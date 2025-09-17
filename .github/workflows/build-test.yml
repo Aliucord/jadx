@@ -8,21 +8,25 @@ on:
 
 jobs:
   tests:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+
+    runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
+      - uses: actions/checkout@v5
 
       - name: Set up JDK
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v5
         with:
-          distribution: 'adopt'
-          java-version: 8
+          distribution: temurin
+          java-version: 21
 
-      - uses: burrunan/gradle-cache-action@v1
-        name: Build with Gradle
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build
+        run: ./gradlew build dist distWin
         env:
-          TERM: dumb
-        with:
-          arguments: clean build dist copyExe --warning-mode=all
+          JADX_BUILD_JAVA_VERSION: 11
+

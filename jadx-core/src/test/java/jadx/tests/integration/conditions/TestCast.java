@@ -2,11 +2,8 @@ package jadx.tests.integration.conditions;
 
 import org.junit.jupiter.api.Test;
 
-import jadx.core.dex.nodes.ClassNode;
 import jadx.tests.api.IntegrationTest;
-
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.containsString;
+import jadx.tests.api.utils.assertj.JadxAssertions;
 
 public class TestCast extends IntegrationTest {
 
@@ -24,7 +21,7 @@ public class TestCast extends IntegrationTest {
 		}
 
 		public void test3(boolean a) {
-			write(a ? 0 : Byte.MAX_VALUE);
+			write(a ? 0 : (byte) 127);
 		}
 
 		public void test4(boolean a) {
@@ -48,15 +45,13 @@ public class TestCast extends IntegrationTest {
 
 	@Test
 	public void test() {
-		ClassNode cls = getClassNode(TestCls.class);
-		String code = cls.getCode().toString();
-
-		assertThat(code, containsString("write(a ? (byte) 0 : (byte) 1);"));
-		assertThat(code, containsString("write(a ? (byte) 0 : this.myByte);"));
-		assertThat(code, containsString("write(a ? (byte) 0 : Byte.MAX_VALUE);"));
-
-		assertThat(code, containsString("write(a ? (short) 0 : (short) 1);"));
-		assertThat(code, containsString("write(a ? this.myShort : (short) 0);"));
-		assertThat(code, containsString("write(a ? Short.MIN_VALUE : (short) 0);"));
+		JadxAssertions.assertThat(getClassNode(TestCls.class))
+				.code()
+				.contains("write(a ? (byte) 0 : (byte) 1);")
+				.contains("write(a ? (byte) 0 : this.myByte);")
+				.contains("write(a ? (byte) 0 : (byte) 127);")
+				.contains("write(a ? (short) 0 : (short) 1);")
+				.contains("write(a ? this.myShort : (short) 0);")
+				.contains("write(a ? Short.MIN_VALUE : (short) 0);");
 	}
 }

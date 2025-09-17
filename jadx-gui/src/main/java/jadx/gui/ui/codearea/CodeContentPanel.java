@@ -1,14 +1,20 @@
 package jadx.gui.ui.codearea;
 
 import java.awt.BorderLayout;
+import java.awt.Component;
 import java.awt.Point;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import jadx.gui.treemodel.JNode;
-import jadx.gui.ui.TabbedPane;
 import jadx.gui.ui.panel.IViewStateSupport;
+import jadx.gui.ui.tab.TabbedPane;
 
 public final class CodeContentPanel extends AbstractCodeContentPanel implements IViewStateSupport {
 	private static final long serialVersionUID = 5310536092010045565L;
+
+	private static final Logger LOG = LoggerFactory.getLogger(CodeContentPanel.class);
 
 	private final CodePanel codePanel;
 
@@ -36,6 +42,11 @@ public final class CodeContentPanel extends AbstractCodeContentPanel implements 
 	}
 
 	@Override
+	public Component getChildrenComponent() {
+		return getCodeArea();
+	}
+
+	@Override
 	public String getTabTooltip() {
 		String s = node.getName();
 		JNode n = (JNode) node.getParent();
@@ -51,16 +62,21 @@ public final class CodeContentPanel extends AbstractCodeContentPanel implements 
 	}
 
 	@Override
-	public EditorViewState getEditorViewState() {
+	public void saveEditorViewState(EditorViewState viewState) {
 		int caretPos = codePanel.getCodeArea().getCaretPosition();
 		Point viewPoint = codePanel.getCodeScrollPane().getViewport().getViewPosition();
-		return new EditorViewState(getNode(), "", caretPos, viewPoint);
+		viewState.setCaretPos(caretPos);
+		viewState.setViewPoint(viewPoint);
 	}
 
 	@Override
 	public void restoreEditorViewState(EditorViewState viewState) {
-		codePanel.getCodeScrollPane().getViewport().setViewPosition(viewState.getViewPoint());
-		codePanel.getCodeArea().setCaretPosition(viewState.getCaretPos());
+		try {
+			codePanel.getCodeScrollPane().getViewport().setViewPosition(viewState.getViewPoint());
+			codePanel.getCodeArea().setCaretPosition(viewState.getCaretPos());
+		} catch (Exception e) {
+			LOG.error("Failed to restore view state", e);
+		}
 	}
 
 	@Override

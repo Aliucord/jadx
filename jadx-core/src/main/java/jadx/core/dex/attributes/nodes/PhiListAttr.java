@@ -3,10 +3,10 @@ package jadx.core.dex.attributes.nodes;
 import java.util.ArrayList;
 import java.util.List;
 
-import jadx.api.ICodeWriter;
 import jadx.api.plugins.input.data.attributes.IJadxAttribute;
 import jadx.core.dex.attributes.AType;
 import jadx.core.dex.instructions.PhiInsn;
+import jadx.core.dex.instructions.args.RegisterArg;
 
 public class PhiListAttr implements IJadxAttribute {
 
@@ -24,12 +24,15 @@ public class PhiListAttr implements IJadxAttribute {
 	@Override
 	public String toString() {
 		StringBuilder sb = new StringBuilder();
-		sb.append("PHI: ");
+		sb.append("PHI:");
 		for (PhiInsn phiInsn : list) {
-			sb.append('r').append(phiInsn.getResult().getRegNum()).append(' ');
+			RegisterArg resArg = phiInsn.getResult();
+			if (resArg != null) {
+				sb.append(" r").append(resArg.getRegNum());
+			}
 		}
 		for (PhiInsn phiInsn : list) {
-			sb.append(ICodeWriter.NL).append("  ").append(phiInsn).append(' ').append(phiInsn.getAttributesString());
+			sb.append('\n').append("  ").append(phiInsn);
 		}
 		return sb.toString();
 	}

@@ -6,16 +6,13 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -29,27 +26,35 @@ import jadx.api.metadata.ICodeNodeRef;
 import jadx.api.metadata.annotations.NodeDeclareRef;
 import jadx.api.metadata.annotations.VarNode;
 import jadx.api.metadata.annotations.VarRef;
+import jadx.api.plugins.CustomResourcesLoader;
 import jadx.api.plugins.JadxPlugin;
-import jadx.api.plugins.JadxPluginManager;
-import jadx.api.plugins.input.JadxInputPlugin;
-import jadx.api.plugins.input.data.ILoadResult;
-import jadx.api.plugins.options.JadxPluginOptions;
+import jadx.api.plugins.events.IJadxEvents;
+import jadx.api.plugins.input.ICodeLoader;
+import jadx.api.plugins.input.JadxCodeInput;
+import jadx.api.plugins.pass.JadxPass;
+import jadx.api.plugins.pass.types.JadxAfterLoadPass;
+import jadx.api.plugins.pass.types.JadxPassType;
+import jadx.api.utils.tasks.ITaskExecutor;
 import jadx.core.Jadx;
 import jadx.core.dex.attributes.AFlag;
 import jadx.core.dex.nodes.ClassNode;
 import jadx.core.dex.nodes.FieldNode;
 import jadx.core.dex.nodes.MethodNode;
+import jadx.core.dex.nodes.PackageNode;
 import jadx.core.dex.nodes.RootNode;
 import jadx.core.dex.visitors.SaveCode;
-import jadx.core.export.ExportGradleProject;
+import jadx.core.export.ExportGradle;
+import jadx.core.export.OutDirs;
+import jadx.core.plugins.JadxPluginManager;
+import jadx.core.plugins.PluginContext;
+import jadx.core.plugins.events.JadxEventsImpl;
 import jadx.core.utils.DecompilerScheduler;
 import jadx.core.utils.Utils;
 import jadx.core.utils.exceptions.JadxRuntimeException;
 import jadx.core.utils.files.FileUtils;
-import jadx.core.xmlgen.BinaryXMLParser;
-import jadx.core.xmlgen.ProtoXMLParser;
-import jadx.core.xmlgen.ResContainer;
+import jadx.core.utils.tasks.TaskExecutor;
 import jadx.core.xmlgen.ResourcesSaver;
+import jadx.zip.ZipReader;
 
 /**
  * Jadx API usage example:
@@ -82,19 +87,23 @@ public final class JadxDecompiler implements Closeable {
 	private static final Logger LOG = LoggerFactory.getLogger(JadxDecompiler.class);
 
 	private final JadxArgs args;
-	private final JadxPluginManager pluginManager = new JadxPluginManager();
-	private final List<ILoadResult> loadedInputs = new ArrayList<>();
+	private final JadxPluginManager pluginManager;
+	private final List<ICodeLoader> loadedInputs = new ArrayList<>();
+	private final ZipReader zipReader;
 
 	private RootNode root;
 	private List<JavaClass> classes;
 	private List<ResourceFile> resources;
 
-	private BinaryXMLParser binaryXmlParser;
-	private ProtoXMLParser protoXmlParser;
-
 	private final IDecompileScheduler decompileScheduler = new DecompilerScheduler();
+	private final ResourcesLoader resourcesLoader;
 
-	private final List<ILoadResult> customLoads = new ArrayList<>();
+	private final List<ICodeLoader> customCodeLoaders = new ArrayList<>();
+	private final List<CustomResourcesLoader> customResourcesLoaders = new ArrayList<>();
+	private final Map<JadxPassType, List<JadxPass>> customPasses = new HashMap<>();
+	private final List<Closeable> closeableList = new ArrayList<>();
+
+	private IJadxEvents events = new JadxEventsImpl();
 
 	private SaveCode.SaveToJar saveTojar = null;
 
@@ -103,22 +112,44 @@ public final class JadxDecompiler implements Closeable {
 	}
 
 	public JadxDecompiler(JadxArgs args) {
-		this.args = args;
+		this.args = Objects.requireNonNull(args);
+		this.pluginManager = new JadxPluginManager(this);
+		this.resourcesLoader = new ResourcesLoader(this);
+		this.zipReader = new ZipReader(args.getSecurity());
 	}
 
 	public void load() {
 		reset();
 		JadxArgsValidator.validate(this);
 		LOG.info("loading ...");
-		loadPlugins(args);
+		FileUtils.updateTempRootDir(args.getFilesGetter().getTempDir());
+		loadPlugins();
 		loadInputFiles();
 
-		root = new RootNode(args);
+		root = new RootNode(this);
+		root.init();
+		// load classes and resources
 		root.loadClasses(loadedInputs);
+		root.loadResources(resourcesLoader, getResources());
+		root.finishClassLoad();
 		root.initClassPath();
-		root.loadResources(getResources());
+		// init passes
+		root.mergePasses(customPasses);
 		root.runPreDecompileStage();
 		root.initPasses();
+		loadFinished();
+	}
+
+	public void reloadPasses() {
+		LOG.info("reloading (passes only) ...");
+		customPasses.clear();
+		root.resetPasses();
+		events.reset();
+		loadPlugins();
+		root.mergePasses(customPasses);
+		root.restartVisitors();
+		root.initPasses();
+		loadFinished();
 	}
 
 	private void loadInputFiles() {
@@ -126,69 +157,82 @@ public final class JadxDecompiler implements Closeable {
 		List<Path> inputPaths = Utils.collectionMap(args.getInputFiles(), File::toPath);
 		List<Path> inputFiles = FileUtils.expandDirs(inputPaths);
 		long start = System.currentTimeMillis();
-		for (JadxInputPlugin inputPlugin : pluginManager.getInputPlugins()) {
-			ILoadResult loadResult = inputPlugin.loadFiles(inputFiles);
-			if (loadResult != null && !loadResult.isEmpty()) {
-				loadedInputs.add(loadResult);
+		for (PluginContext plugin : pluginManager.getResolvedPluginContexts()) {
+			for (JadxCodeInput codeLoader : plugin.getCodeInputs()) {
+				try {
+					ICodeLoader loader = codeLoader.loadFiles(inputFiles);
+					if (loader != null && !loader.isEmpty()) {
+						loadedInputs.add(loader);
+					}
+				} catch (Exception e) {
+					LOG.warn("Failed to load code for plugin: {}", plugin, e);
+				}
 			}
 		}
-		loadedInputs.addAll(customLoads);
+		loadedInputs.addAll(customCodeLoaders);
 		if (LOG.isDebugEnabled()) {
 			LOG.debug("Loaded using {} inputs plugin in {} ms", loadedInputs.size(), System.currentTimeMillis() - start);
 		}
 	}
 
-	public void addCustomLoad(ILoadResult customLoad) {
-		customLoads.add(customLoad);
-	}
-
-	public List<ILoadResult> getCustomLoads() {
-		return customLoads;
-	}
-
 	private void reset() {
+		unloadPlugins();
 		root = null;
 		classes = null;
 		resources = null;
-		binaryXmlParser = null;
-		protoXmlParser = null;
+		events.reset();
 	}
 
 	@Override
 	public void close() {
 		reset();
-		closeInputs();
+		closeAll(loadedInputs);
+		closeAll(customCodeLoaders);
+		closeAll(customResourcesLoaders);
+		closeAll(closeableList);
+		FileUtils.deleteDirIfExists(args.getFilesGetter().getTempDir());
 		args.close();
+		FileUtils.clearTempRootDir();
 	}
 
-	private void closeInputs() {
-		loadedInputs.forEach(load -> {
-			try {
-				load.close();
-			} catch (Exception e) {
-				LOG.error("Failed to close input", e);
-			}
-		});
-		loadedInputs.clear();
-	}
-
-	private void loadPlugins(JadxArgs args) {
-		pluginManager.providesSuggestion("java-input", args.isUseDxInput() ? "java-convert" : "java-input");
-		pluginManager.load();
-		if (LOG.isDebugEnabled()) {
-			LOG.debug("Resolved plugins: {}", Utils.collectionMap(pluginManager.getResolvedPlugins(),
-					p -> p.getPluginInfo().getPluginId()));
-		}
-		Map<String, String> pluginOptions = args.getPluginOptions();
-		if (!pluginOptions.isEmpty()) {
-			LOG.debug("Applying plugin options: {}", pluginOptions);
-			for (JadxPluginOptions plugin : pluginManager.getPluginsWithOptions()) {
+	private void closeAll(List<? extends Closeable> list) {
+		try {
+			for (Closeable closeable : list) {
 				try {
-					plugin.setOptions(pluginOptions);
+					closeable.close();
 				} catch (Exception e) {
-					String pluginId = plugin.getPluginInfo().getPluginId();
-					throw new JadxRuntimeException("Failed to apply options for plugin: " + pluginId, e);
+					LOG.warn("Fail to close '{}'", closeable, e);
 				}
+			}
+		} finally {
+			list.clear();
+		}
+	}
+
+	private void loadPlugins() {
+		pluginManager.providesSuggestion("java-input", args.isUseDxInput() ? "java-convert" : "java-input");
+		pluginManager.load(args.getPluginLoader());
+		if (LOG.isDebugEnabled()) {
+			LOG.debug("Resolved plugins: {}", pluginManager.getResolvedPluginContexts());
+		}
+		pluginManager.initResolved();
+		if (LOG.isDebugEnabled()) {
+			List<String> passes = customPasses.values().stream().flatMap(Collection::stream)
+					.map(p -> p.getInfo().getName()).collect(Collectors.toList());
+			LOG.debug("Loaded custom passes: {} {}", passes.size(), passes);
+		}
+	}
+
+	private void unloadPlugins() {
+		pluginManager.unloadResolved();
+	}
+
+	private void loadFinished() {
+		LOG.debug("Load finished");
+		List<JadxPass> list = customPasses.get(JadxAfterLoadPass.TYPE);
+		if (list != null) {
+			for (JadxPass pass : list) {
+				((JadxAfterLoadPass) pass).init(this);
 			}
 		}
 	}
@@ -212,13 +256,12 @@ public final class JadxDecompiler implements Closeable {
 
 	@SuppressWarnings("BusyWait")
 	public void save(int intervalInMillis, ProgressListener listener) {
-		ThreadPoolExecutor ex = (ThreadPoolExecutor) getSaveExecutor();
-		ex.shutdown();
 		try {
-			long total = ex.getTaskCount();
-			while (ex.isTerminating()) {
-				long done = ex.getCompletedTaskCount();
-				listener.progress(done, total);
+			ITaskExecutor tasks = getSaveTaskExecutor();
+			tasks.execute();
+			long total = tasks.getTasksCount();
+			while (tasks.isRunning()) {
+				listener.progress(tasks.getProgress(), total);
 				Thread.sleep(intervalInMillis);
 			}
 		} catch (InterruptedException e) {
@@ -240,16 +283,10 @@ public final class JadxDecompiler implements Closeable {
 		save(false, true);
 	}
 
-	@SuppressWarnings("ResultOfMethodCallIgnored")
 	private void save(boolean saveSources, boolean saveResources) {
-		ExecutorService ex = getSaveExecutor(saveSources, saveResources);
-		ex.shutdown();
-		try {
-			ex.awaitTermination(1, TimeUnit.DAYS);
-		} catch (InterruptedException e) {
-			LOG.error("Save interrupted", e);
-			Thread.currentThread().interrupt();
-		}
+		ITaskExecutor executor = getSaveTasks(saveSources, saveResources);
+		executor.execute();
+		executor.awaitTermination();
 
 		if (saveTojar != null) {
 			saveTojar.close();
@@ -257,102 +294,148 @@ public final class JadxDecompiler implements Closeable {
 		}
 	}
 
-	public ExecutorService getSaveExecutor() {
-		return getSaveExecutor(!args.isSkipSources(), !args.isSkipResources());
-	}
-
-	public List<Runnable> getSaveTasks() {
+	public ITaskExecutor getSaveTaskExecutor() {
 		return getSaveTasks(!args.isSkipSources(), !args.isSkipResources());
 	}
 
-	private ExecutorService getSaveExecutor(boolean saveSources, boolean saveResources) {
-		int threadsCount = args.getThreadsCount();
-		LOG.debug("processing threads count: {}", threadsCount);
-		LOG.info("processing ...");
-		ExecutorService executor = Executors.newFixedThreadPool(threadsCount);
-		List<Runnable> tasks = getSaveTasks(saveSources, saveResources);
-		tasks.forEach(executor::execute);
-		return executor;
+	@Deprecated(forRemoval = true)
+	public ExecutorService getSaveExecutor() {
+		ITaskExecutor executor = getSaveTaskExecutor();
+		executor.execute();
+		return executor.getInternalExecutor();
 	}
 
-	private List<Runnable> getSaveTasks(boolean saveSources, boolean saveResources) {
+	@Deprecated(forRemoval = true)
+	public List<Runnable> getSaveTasks() {
+		return Collections.singletonList(this::save);
+	}
+
+	private TaskExecutor getSaveTasks(boolean saveSources, boolean saveResources) {
 		if (root == null) {
 			throw new JadxRuntimeException("No loaded files");
 		}
-		File sourcesOutDir;
-		File resOutDir;
-		if (args.isExportAsGradleProject()) {
-			ResourceFile androidManifest = resources.stream()
-					.filter(resourceFile -> resourceFile.getType() == ResourceType.MANIFEST)
-					.findFirst()
-					.orElseThrow(IllegalStateException::new);
-
-			ResContainer strings = resources.stream()
-					.filter(resourceFile -> resourceFile.getType() == ResourceType.ARSC)
-					.findFirst()
-					.orElseThrow(IllegalStateException::new)
-					.loadContent()
-					.getSubFiles()
-					.stream()
-					.filter(resContainer -> resContainer.getFileName().contains("strings.xml"))
-					.findFirst()
-					.orElseThrow(IllegalStateException::new);
-
-			ExportGradleProject export = new ExportGradleProject(root, args.getOutDir(), androidManifest, strings);
-			export.init();
-			sourcesOutDir = export.getSrcOutDir();
-			resOutDir = export.getResOutDir();
+		OutDirs outDirs;
+		ExportGradle gradleExport;
+		if (args.getExportGradleType() != null) {
+			gradleExport = new ExportGradle(root, args.getOutDir(), getResources());
+			outDirs = gradleExport.init();
 		} else {
-			sourcesOutDir = args.getOutDirSrc();
-			resOutDir = args.getOutDirRes();
+			gradleExport = null;
+			outDirs = new OutDirs(args.getOutDirSrc(), args.getOutDirRes());
+			outDirs.makeDirs();
 		}
-		List<Runnable> tasks = new ArrayList<>();
-		// save resources first because decompilation can hang or fail
+
+		TaskExecutor executor = new TaskExecutor();
+		executor.setThreadsCount(args.getThreadsCount());
 		if (saveResources) {
-			appendResourcesSaveTasks(tasks, resOutDir);
+			// save resources first because decompilation can stop or fail
+			appendResourcesSaveTasks(executor, outDirs.getResOutDir());
 		}
 		if (saveSources) {
-			appendSourcesSave(tasks, sourcesOutDir);
+			appendSourcesSave(executor, outDirs.getSrcOutDir());
 		}
-		return tasks;
+		if (gradleExport != null) {
+			executor.addSequentialTask(gradleExport::generateGradleFiles);
+		}
+		return executor;
 	}
 
-	private void appendResourcesSaveTasks(List<Runnable> tasks, File outDir) {
+	private void appendResourcesSaveTasks(ITaskExecutor executor, File outDir) {
 		if (args.isSkipFilesSave()) {
 			return;
 		}
 		// process AndroidManifest.xml first to load complete resource ids table
 		for (ResourceFile resourceFile : getResources()) {
 			if (resourceFile.getType() == ResourceType.MANIFEST) {
-				new ResourcesSaver(outDir, resourceFile).run();
+				new ResourcesSaver(this, outDir, resourceFile).run();
+				break;
 			}
 		}
+		Set<String> inputFileNames = args.getInputFiles().stream()
+				.map(File::getAbsolutePath)
+				.collect(Collectors.toSet());
+		Set<String> codeSources = collectCodeSources();
 
-		Set<String> inputFileNames = args.getInputFiles().stream().map(File::getAbsolutePath).collect(Collectors.toSet());
+		List<Runnable> tasks = new ArrayList<>();
 		for (ResourceFile resourceFile : getResources()) {
 			ResourceType resType = resourceFile.getType();
 			if (resType == ResourceType.MANIFEST) {
 				// already processed
 				continue;
 			}
-			if (resType != ResourceType.ARSC
-					&& inputFileNames.contains(resourceFile.getOriginalName())) {
-				// ignore resource made from input file
+			String resOriginalName = resourceFile.getOriginalName();
+			if (resType != ResourceType.ARSC && inputFileNames.contains(resOriginalName)) {
+				// ignore resource made from an input file
 				continue;
 			}
-			tasks.add(new ResourcesSaver(outDir, resourceFile));
+			if (codeSources.contains(resOriginalName)) {
+				// don't output code source resources (.dex, .class, etc)
+				// do not trust file extensions, use only sources set as class inputs
+				continue;
+			}
+			tasks.add(new ResourcesSaver(this, outDir, resourceFile));
 		}
+		executor.addParallelTasks(tasks);
 	}
 
-	private void appendSourcesSave(List<Runnable> tasks, File outDir) {
+	private Set<String> collectCodeSources() {
+		Set<String> set = new HashSet<>();
+		for (ClassNode cls : root.getClasses(true)) {
+			if (cls.getClsData() == null) {
+				// exclude synthetic classes
+				continue;
+			}
+			String inputFileName = cls.getInputFileName();
+			if (inputFileName.endsWith(".class")) {
+				// cut .class name to get source .jar file
+				// current template: "<optional input files>:<.jar>:<full class name>"
+				// TODO: add property to set file name or reference to resource name
+				int endIdx = inputFileName.lastIndexOf(':');
+				if (endIdx != -1) {
+					int startIdx = inputFileName.lastIndexOf(':', endIdx - 1) + 1;
+					inputFileName = inputFileName.substring(startIdx, endIdx);
+				}
+			}
+			set.add(inputFileName);
+		}
+		return set;
+	}
+
+	private void appendSourcesSave(ITaskExecutor executor, File outDir) {
 		boolean isJar = outDir.getName().endsWith(".jar");
 		if (isJar && saveTojar == null) {
 			saveTojar = new SaveCode.SaveToJar(outDir);
 		}
 
-		Predicate<String> classFilter = args.getClassFilter();
 		List<JavaClass> classes = getClasses();
-		List<JavaClass> processQueue = new ArrayList<>(classes.size());
+		List<JavaClass> processQueue = filterClasses(classes);
+		List<List<JavaClass>> batches;
+		try {
+			batches = decompileScheduler.buildBatches(processQueue);
+		} catch (Exception e) {
+			throw new JadxRuntimeException("Decompilation batches build failed", e);
+		}
+		List<Runnable> decompileTasks = new ArrayList<>(batches.size());
+		for (List<JavaClass> decompileBatch : batches) {
+			decompileTasks.add(() -> {
+				for (JavaClass cls : decompileBatch) {
+					try {
+						ClassNode clsNode = cls.getClassNode();
+						ICodeInfo code = clsNode.getCode();
+						SaveCode.save(outDir, clsNode, code, saveTojar);
+					} catch (Exception e) {
+						LOG.error("Error saving class: {}", cls, e);
+					}
+				}
+
+			});
+		}
+		executor.addParallelTasks(decompileTasks);
+	}
+
+	private List<JavaClass> filterClasses(List<JavaClass> classes) {
+		Predicate<String> classFilter = args.getClassFilter();
+		List<JavaClass> list = new ArrayList<>(classes.size());
 		for (JavaClass cls : classes) {
 			ClassNode clsNode = cls.getClassNode();
 			if (clsNode.contains(AFlag.DONT_GENERATE)) {
@@ -364,34 +447,9 @@ public final class JadxDecompiler implements Closeable {
 				}
 				continue;
 			}
-			processQueue.add(cls);
+			list.add(cls);
 		}
-		List<List<JavaClass>> batches;
-		try {
-			batches = decompileScheduler.buildBatches(processQueue);
-		} catch (Exception e) {
-			throw new JadxRuntimeException("Decompilation batches build failed", e);
-		}
-		for (List<JavaClass> decompileBatch : batches) {
-			Runnable runnable = () -> {
-				for (JavaClass cls : decompileBatch) {
-					try {
-						ClassNode clsNode = cls.getClassNode();
-						ICodeInfo code = clsNode.getCode();
-						SaveCode.save(outDir, clsNode, code, saveTojar);
-					} catch (Exception e) {
-						LOG.error("Error saving class: {}", cls, e);
-					}
-				}
-			};
-
-			if (isJar) {
-				// jars can't be multithreaded?
-				runnable.run();
-			} else {
-				tasks.add(runnable);
-			}
-		}
+		return list;
 	}
 
 	public List<JavaClass> getClasses() {
@@ -423,31 +481,13 @@ public final class JadxDecompiler implements Closeable {
 			if (root == null) {
 				return Collections.emptyList();
 			}
-			resources = new ResourcesLoader(this).load();
+			resources = resourcesLoader.load(root);
 		}
 		return resources;
 	}
 
 	public List<JavaPackage> getPackages() {
-		List<JavaClass> classList = getClasses();
-		if (classList.isEmpty()) {
-			return Collections.emptyList();
-		}
-		Map<String, List<JavaClass>> map = new HashMap<>();
-		for (JavaClass javaClass : classList) {
-			String pkg = javaClass.getPackage();
-			List<JavaClass> clsList = map.computeIfAbsent(pkg, k -> new ArrayList<>());
-			clsList.add(javaClass);
-		}
-		List<JavaPackage> packages = new ArrayList<>(map.size());
-		for (Map.Entry<String, List<JavaClass>> entry : map.entrySet()) {
-			packages.add(new JavaPackage(entry.getKey(), entry.getValue()));
-		}
-		Collections.sort(packages);
-		for (JavaPackage pkg : packages) {
-			pkg.getClasses().sort(Comparator.comparing(JavaClass::getName, String.CASE_INSENSITIVE_ORDER));
-		}
-		return Collections.unmodifiableList(packages);
+		return Utils.collectionMap(root.getPackages(), this::convertPackageNode);
 	}
 
 	public int getErrorsCount() {
@@ -478,20 +518,6 @@ public final class JadxDecompiler implements Closeable {
 	@ApiStatus.Internal
 	public RootNode getRoot() {
 		return root;
-	}
-
-	synchronized BinaryXMLParser getBinaryXmlParser() {
-		if (binaryXmlParser == null) {
-			binaryXmlParser = new BinaryXMLParser(root);
-		}
-		return binaryXmlParser;
-	}
-
-	synchronized ProtoXMLParser getProtoXmlParser() {
-		if (protoXmlParser == null) {
-			protoXmlParser = new ProtoXMLParser(root);
-		}
-		return protoXmlParser;
 	}
 
 	/**
@@ -528,6 +554,26 @@ public final class JadxDecompiler implements Closeable {
 			mth.setJavaNode(javaMethod);
 		}
 		return javaMethod;
+	}
+
+	@ApiStatus.Internal
+	synchronized JavaPackage convertPackageNode(PackageNode pkg) {
+		JavaPackage foundPkg = pkg.getJavaNode();
+		if (foundPkg != null) {
+			return foundPkg;
+		}
+		List<JavaClass> clsList = Utils.collectionMap(pkg.getClasses(), this::convertClassNode);
+		int subPkgsCount = pkg.getSubPackages().size();
+		List<JavaPackage> subPkgs = subPkgsCount == 0 ? Collections.emptyList() : new ArrayList<>(subPkgsCount);
+		JavaPackage javaPkg = new JavaPackage(pkg, clsList, subPkgs);
+		if (subPkgsCount != 0) {
+			// add subpackages after parent to avoid endless recursion
+			for (PackageNode subPackage : pkg.getSubPackages()) {
+				subPkgs.add(convertPackageNode(subPackage));
+			}
+		}
+		pkg.setJavaNode(javaPkg);
+		return javaPkg;
 	}
 
 	@Nullable
@@ -590,6 +636,8 @@ public final class JadxDecompiler implements Closeable {
 				return convertMethodNode((MethodNode) ann);
 			case FIELD:
 				return convertFieldNode((FieldNode) ann);
+			case PKG:
+				return convertPackageNode((PackageNode) ann);
 			case DECLARATION:
 				return getJavaNodeByCodeAnnotation(codeInfo, ((NodeDeclareRef) ann).getNode());
 			case VAR:
@@ -666,6 +714,49 @@ public final class JadxDecompiler implements Closeable {
 
 	public IDecompileScheduler getDecompileScheduler() {
 		return decompileScheduler;
+	}
+
+	public IJadxEvents events() {
+		return events;
+	}
+
+	public void setEventsImpl(IJadxEvents eventsImpl) {
+		this.events = eventsImpl;
+	}
+
+	public void addCustomCodeLoader(ICodeLoader customCodeLoader) {
+		customCodeLoaders.add(customCodeLoader);
+	}
+
+	public List<ICodeLoader> getCustomCodeLoaders() {
+		return customCodeLoaders;
+	}
+
+	public void addCustomResourcesLoader(CustomResourcesLoader loader) {
+		if (customResourcesLoaders.contains(loader)) {
+			return;
+		}
+		customResourcesLoaders.add(loader);
+	}
+
+	public List<CustomResourcesLoader> getCustomResourcesLoaders() {
+		return customResourcesLoaders;
+	}
+
+	public void addCustomPass(JadxPass pass) {
+		customPasses.computeIfAbsent(pass.getPassType(), l -> new ArrayList<>()).add(pass);
+	}
+
+	public ResourcesLoader getResourcesLoader() {
+		return resourcesLoader;
+	}
+
+	public ZipReader getZipReader() {
+		return zipReader;
+	}
+
+	public void addCloseable(Closeable closeable) {
+		closeableList.add(closeable);
 	}
 
 	@Override

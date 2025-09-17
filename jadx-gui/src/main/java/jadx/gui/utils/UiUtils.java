@@ -1,9 +1,11 @@
 package jadx.gui.utils;
 
+import java.awt.Color;
 import java.awt.Component;
 import java.awt.Image;
 import java.awt.MouseInfo;
 import java.awt.Point;
+import java.awt.Rectangle;
 import java.awt.Toolkit;
 import java.awt.Window;
 import java.awt.datatransfer.Clipboard;
@@ -12,11 +14,14 @@ import java.awt.datatransfer.Transferable;
 import java.awt.event.ActionEvent;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
+import java.awt.event.MouseEvent;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import javax.swing.AbstractAction;
 import javax.swing.Action;
@@ -24,9 +29,13 @@ import javax.swing.Icon;
 import javax.swing.ImageIcon;
 import javax.swing.JComponent;
 import javax.swing.JOptionPane;
+import javax.swing.JTextField;
+import javax.swing.JTree;
 import javax.swing.KeyStroke;
 import javax.swing.RootPaneContainer;
 import javax.swing.SwingUtilities;
+import javax.swing.tree.TreeNode;
+import javax.swing.tree.TreePath;
 
 import org.intellij.lang.annotations.MagicConstant;
 import org.jetbrains.annotations.TestOnly;
@@ -35,6 +44,8 @@ import org.slf4j.LoggerFactory;
 
 import com.formdev.flatlaf.extras.FlatSVGIcon;
 
+import jadx.commons.app.JadxCommonEnv;
+import jadx.commons.app.JadxSystemInfo;
 import jadx.core.dex.info.AccessInfo;
 import jadx.core.dex.instructions.args.ArgType;
 import jadx.core.utils.StringUtils;
@@ -45,6 +56,8 @@ import jadx.gui.ui.codearea.AbstractCodeArea;
 
 public class UiUtils {
 	private static final Logger LOG = LoggerFactory.getLogger(UiUtils.class);
+
+	public static final boolean JADX_GUI_DEBUG = JadxCommonEnv.getBool("JADX_GUI_DEBUG", false);
 
 	/**
 	 * The minimum about of memory in bytes we are trying to keep free, otherwise the application may
@@ -57,6 +70,19 @@ public class UiUtils {
 	 * and can't be changed at runtime.
 	 */
 	public static final long MIN_FREE_MEMORY = calculateMinFreeMemory();
+
+	public static final Runnable EMPTY_RUNNABLE = new Runnable() {
+		@Override
+		public void run() {
+		}
+
+		@Override
+		public String toString() {
+			return "EMPTY_RUNNABLE";
+		}
+	};
+
+	private static final ExecutorService BACKGROUND_THREAD = Executors.newSingleThreadExecutor(Utils.simpleThreadFactory("utils-bg"));
 
 	private UiUtils() {
 	}
@@ -253,7 +279,7 @@ public class UiUtils {
 	@SuppressWarnings("deprecation")
 	@MagicConstant(flagsFromClass = InputEvent.class)
 	private static int getCtrlButton() {
-		if (SystemInfo.IS_MAC) {
+		if (JadxSystemInfo.IS_MAC) {
 			return Toolkit.getDefaultToolkit().getMenuShortcutKeyMask();
 		} else {
 			return InputEvent.CTRL_DOWN_MASK;
@@ -296,12 +322,29 @@ public class UiUtils {
 		return pos;
 	}
 
-	public static String getEnvVar(String varName, String defValue) {
-		String envVal = System.getenv(varName);
-		if (envVal == null) {
-			return defValue;
+	public static TreeNode getTreeNodeUnderMouse(JTree tree, MouseEvent mouseEvent) {
+		TreePath path = tree.getClosestPathForLocation(mouseEvent.getX(), mouseEvent.getY());
+		if (path == null) {
+			return null;
 		}
-		return envVal;
+		// allow 'closest' path only at the right of the item row
+		Rectangle pathBounds = tree.getPathBounds(path);
+		if (pathBounds != null) {
+			int y = mouseEvent.getY();
+			if (y < pathBounds.y || y > (pathBounds.y + pathBounds.height)) {
+				return null;
+			}
+			if (mouseEvent.getX() < pathBounds.x) {
+				// exclude expand/collapse events
+				return null;
+			}
+		}
+		Object obj = path.getLastPathComponent();
+		if (obj instanceof TreeNode) {
+			tree.setSelectionPath(path);
+			return (TreeNode) obj;
+		}
+		return null;
 	}
 
 	public static void showMessageBox(Component parent, String msg) {
@@ -309,6 +352,7 @@ public class UiUtils {
 	}
 
 	public static void errorMessage(Component parent, String message) {
+		LOG.error(message);
 		JOptionPane.showMessageDialog(parent, message,
 				NLS.str("message.errorTitle"), JOptionPane.ERROR_MESSAGE);
 	}
@@ -381,6 +425,14 @@ public class UiUtils {
 		}
 	}
 
+	/**
+	 * Run task in background thread.
+	 * Uses single thread, so all tasks are ordered.
+	 */
+	public static void bgRun(Runnable runnable) {
+		BACKGROUND_THREAD.submit(runnable);
+	}
+
 	public static void uiThreadGuard() {
 		if (!SwingUtilities.isEventDispatchThread()) {
 			LOG.warn("Expect UI thread, got: {}", Thread.currentThread(), new JadxRuntimeException());
@@ -410,5 +462,73 @@ public class UiUtils {
 	@TestOnly
 	public static void printStackTrace(String label) {
 		LOG.debug("StackTrace: {}", label, new Exception(label));
+	}
+
+	public static boolean isDarkTheme(Color background) {
+		double brightness = (background.getRed() * 0.299
+				+ background.getGreen() * 0.587
+				+ background.getBlue() * 0.114) / 255;
+		return brightness < 0.5;
+	}
+
+	/**
+	 * Adjusts the brightness of a given {@code Color} object without altering its hue or saturation.
+	 *
+	 * <p>
+	 * This method converts the input RGB color to the HSB (Hue, Saturation, Brightness) color model,
+	 * multiplies its brightness component by the specified {@code factor}, and then converts it back
+	 * to a new RGB {@code Color} object.
+	 * </p>
+	 *
+	 * <p>
+	 * The new brightness value is capped at {@code 1.0f} (maximum HSB brightness) to prevent
+	 * colors from becoming invalid or exceeding full brightness.
+	 * </p>
+	 *
+	 * How to use:
+	 * <ul>
+	 * <li>To make a color **brighter**: Use a {@code factor} greater than {@code 1.0f} (e.g.,
+	 * {@code 1.2f}, {@code 1.5f}).</li>
+	 * <li>To make a color **darker**: Use a {@code factor} less than {@code 1.0f} (e.g., {@code 0.8f},
+	 * {@code 0.5f}).</li>
+	 * <li>To keep the brightness **unchanged**: Use a {@code factor} of {@code 1.0f}.</li>
+	 * </ul>
+	 *
+	 * <pre>{@code
+	 * // Example usage:
+	 * Color originalColor = Color.BLUE;
+	 *
+	 * // Make the blue color 50% brighter (factor 1.5)
+	 * Color brighterBlue = adjustBrightness(originalColor, 1.5f);
+	 *
+	 * // Make the blue color 30% darker (factor 0.7)
+	 * Color darkerBlue = adjustBrightness(originalColor, 0.7f);
+	 *
+	 * // Get the brightest possible version of the color (will cap at 1.0 brightness)
+	 * Color maxBrightnessBlue = adjustBrightness(originalColor, 10.0f);
+	 *
+	 * // Get a very dark, almost black version
+	 * Color veryDarkBlue = adjustBrightness(originalColor, 0.1f);
+	 * }</pre>
+	 *
+	 * @param color  The original {@code Color} object whose brightness needs to be adjusted.
+	 * @param factor The multiplier for the brightness.
+	 * @return A new {@code Color} object with the adjusted brightness.
+	 * @see java.awt.Color#RGBtoHSB(int, int, int, float[])
+	 * @see java.awt.Color#getHSBColor(float, float, float)
+	 */
+	public static Color adjustBrightness(Color color, float factor) {
+		float[] hsb = Color.RGBtoHSB(color.getRed(), color.getGreen(), color.getBlue(), null);
+		hsb[2] = Math.min(1.0f, hsb[2] * factor); // Adjust brightness
+		return Color.getHSBColor(hsb[0], hsb[1], hsb[2]);
+	}
+
+	public static void highlightAsErrorField(final JTextField field, boolean isError) {
+		if (isError) {
+			field.putClientProperty("JComponent.outline", "error");
+		} else {
+			field.putClientProperty("JComponent.outline", "");
+		}
+		field.repaint();
 	}
 }

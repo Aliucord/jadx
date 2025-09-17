@@ -28,7 +28,8 @@ public class DecompilerScheduler implements IDecompileScheduler {
 			long start = System.currentTimeMillis();
 			List<List<JavaClass>> result = internalBatches(classes);
 			if (LOG.isDebugEnabled()) {
-				LOG.debug("Build decompilation batches in {}ms", System.currentTimeMillis() - start);
+				LOG.debug("Build decompilation batches in {}ms for {} classes",
+						System.currentTimeMillis() - start, classes.size());
 			}
 			if (DEBUG_BATCHES) {
 				check(result, classes);
@@ -64,7 +65,7 @@ public class DecompilerScheduler implements IDecompileScheduler {
 					mergedBatch = new ArrayList<>(MERGED_BATCH_SIZE);
 				}
 			} else {
-				List<JavaClass> batch = new ArrayList<>(depsSize + 1);
+				List<JavaClass> batch = new ArrayList<>();
 				for (JavaClass dep : cls.getDependencies()) {
 					JavaClass topDep = dep.getTopParentClass();
 					if (!added.contains(topDep)) {
@@ -74,10 +75,10 @@ public class DecompilerScheduler implements IDecompileScheduler {
 				}
 				batch.sort(cmpDepSize);
 				batch.add(cls);
-				result.add(batch);
+				result.add(Utils.lockList(batch));
 			}
 		}
-		if (mergedBatch.size() > 0) {
+		if (!mergedBatch.isEmpty()) {
 			result.add(mergedBatch);
 		}
 		if (DEBUG_BATCHES) {

@@ -103,7 +103,7 @@ public class ConstPoolReader {
 	}
 
 	private CallSite resolveMethodCallSite(int bootstrapMthIdx, int nameIdx, int descIdx) {
-		JavaBootstrapMethodsAttr bootstrapMethodsAttr = clsData.loadAttribute(data, JavaAttrType.BOOTSTRAP_METHODS);
+		JavaBootstrapMethodsAttr bootstrapMethodsAttr = clsData.loadClassAttribute(data, JavaAttrType.BOOTSTRAP_METHODS);
 		if (bootstrapMethodsAttr == null) {
 			throw new JavaClassParseException("Unexpected missing BootstrapMethods attribute");
 		}
@@ -221,6 +221,8 @@ public class ConstPoolReader {
 				return new EncodedValue(EncodedType.ENCODED_LONG, data.readS8());
 			case DOUBLE:
 				return new EncodedValue(EncodedType.ENCODED_DOUBLE, Double.longBitsToDouble(data.readU8()));
+			case CLASS:
+				return new EncodedValue(EncodedType.ENCODED_TYPE, getClass(idx));
 			case METHOD_TYPE:
 				return new EncodedValue(EncodedType.ENCODED_METHOD_TYPE, DescriptorParser.parseToMethodProto(getUtf8(readU2())));
 			case METHOD_HANDLE:

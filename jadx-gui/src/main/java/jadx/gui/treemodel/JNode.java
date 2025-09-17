@@ -1,9 +1,13 @@
 package jadx.gui.treemodel;
 
 import java.util.Comparator;
+import java.util.Enumeration;
+import java.util.List;
+import java.util.function.Predicate;
 
-import javax.swing.Icon;
+import javax.swing.JPopupMenu;
 import javax.swing.tree.DefaultMutableTreeNode;
+import javax.swing.tree.TreeNode;
 
 import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
 import org.jetbrains.annotations.NotNull;
@@ -11,10 +15,15 @@ import org.jetbrains.annotations.Nullable;
 
 import jadx.api.ICodeInfo;
 import jadx.api.JavaNode;
-import jadx.gui.ui.TabbedPane;
+import jadx.api.gui.tree.ITreeNode;
+import jadx.api.metadata.ICodeNodeRef;
+import jadx.api.resources.ResourceContentType;
+import jadx.core.utils.ListUtils;
+import jadx.gui.ui.MainWindow;
 import jadx.gui.ui.panel.ContentPanel;
+import jadx.gui.ui.tab.TabbedPane;
 
-public abstract class JNode extends DefaultMutableTreeNode implements Comparable<JNode> {
+public abstract class JNode extends DefaultMutableTreeNode implements ITreeNode, Comparable<JNode> {
 
 	private static final long serialVersionUID = -5154479091781041008L;
 
@@ -31,8 +40,12 @@ public abstract class JNode extends DefaultMutableTreeNode implements Comparable
 		return null;
 	}
 
-	@Nullable
-	public ContentPanel getContentPanel(TabbedPane tabbedPane) {
+	@Override
+	public ICodeNodeRef getCodeNodeRef() {
+		return null;
+	}
+
+	public @Nullable ContentPanel getContentPanel(TabbedPane tabbedPane) {
 		return null;
 	}
 
@@ -40,13 +53,19 @@ public abstract class JNode extends DefaultMutableTreeNode implements Comparable
 		return SyntaxConstants.SYNTAX_STYLE_NONE;
 	}
 
-	@NotNull
 	public ICodeInfo getCodeInfo() {
 		return ICodeInfo.EMPTY;
 	}
 
-	public abstract Icon getIcon();
+	public ResourceContentType getContentType() {
+		return ResourceContentType.CONTENT_TEXT;
+	}
 
+	public boolean isEditable() {
+		return false;
+	}
+
+	@Override
 	public String getName() {
 		JavaNode javaNode = getJavaNode();
 		if (javaNode == null) {
@@ -55,8 +74,17 @@ public abstract class JNode extends DefaultMutableTreeNode implements Comparable
 		return javaNode.getName();
 	}
 
-	public boolean canRename() {
-		return false;
+	public boolean supportsQuickTabs() {
+		return true;
+	}
+
+	public @Nullable JPopupMenu onTreePopupMenu(MainWindow mainWindow) {
+		return null;
+	}
+
+	@Override
+	public String getID() {
+		return makeString();
 	}
 
 	public abstract String makeString();
@@ -95,6 +123,36 @@ public abstract class JNode extends DefaultMutableTreeNode implements Comparable
 
 	public String getTooltip() {
 		return makeLongStringHtml();
+	}
+
+	public @Nullable JNode searchNode(Predicate<JNode> filter) {
+		Enumeration<?> en = this.children();
+		while (en.hasMoreElements()) {
+			JNode node = (JNode) en.nextElement();
+			if (filter.test(node)) {
+				return node;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Remove and return first found node
+	 */
+	public @Nullable JNode removeNode(Predicate<JNode> filter) {
+		Enumeration<?> en = this.children();
+		while (en.hasMoreElements()) {
+			JNode node = (JNode) en.nextElement();
+			if (filter.test(node)) {
+				this.remove(node);
+				return node;
+			}
+		}
+		return null;
+	}
+
+	public List<TreeNode> childrenList() {
+		return ListUtils.enumerationToList(this.children());
 	}
 
 	private static final Comparator<JNode> COMPARATOR = Comparator

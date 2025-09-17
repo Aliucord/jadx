@@ -17,9 +17,9 @@ import org.slf4j.LoggerFactory;
 import jadx.api.DecompilationMode;
 import jadx.gui.jobs.BackgroundExecutor;
 import jadx.gui.treemodel.JClass;
-import jadx.gui.ui.TabbedPane;
 import jadx.gui.ui.codearea.mode.JCodeMode;
 import jadx.gui.ui.panel.IViewStateSupport;
+import jadx.gui.ui.tab.TabbedPane;
 import jadx.gui.utils.NLS;
 
 import static com.formdev.flatlaf.FlatClientProperties.TABBED_PANE_TRAILING_COMPONENT;
@@ -125,6 +125,11 @@ public final class ClassCodeContentPanel extends AbstractCodeContentPanel implem
 		return javaCodePanel.getCodeArea();
 	}
 
+	@Override
+	public Component getChildrenComponent() {
+		return getCodeArea();
+	}
+
 	public CodePanel getJavaCodePanel() {
 		return javaCodePanel;
 	}
@@ -147,12 +152,14 @@ public final class ClassCodeContentPanel extends AbstractCodeContentPanel implem
 	}
 
 	@Override
-	public EditorViewState getEditorViewState() {
+	public void saveEditorViewState(EditorViewState viewState) {
 		CodePanel codePanel = (CodePanel) areaTabbedPane.getSelectedComponent();
 		int caretPos = codePanel.getCodeArea().getCaretPosition();
 		Point viewPoint = codePanel.getCodeScrollPane().getViewport().getViewPosition();
 		String subPath = codePanel == javaCodePanel ? "java" : "smali";
-		return new EditorViewState(getNode(), subPath, caretPos, viewPoint);
+		viewState.setSubPath(subPath);
+		viewState.setCaretPos(caretPos);
+		viewState.setViewPoint(viewPoint);
 	}
 
 	@Override

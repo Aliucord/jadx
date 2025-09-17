@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Matcher;
 
 import jadx.api.ICodeWriter;
 import jadx.api.impl.SimpleCodeWriter;
@@ -30,6 +31,7 @@ import static jadx.core.codegen.MethodGen.FallbackOption.BLOCK_DUMP;
 public class DotGraphVisitor extends AbstractVisitor {
 
 	private static final String NL = "\\l";
+	private static final String NLQR = Matcher.quoteReplacement(NL);
 	private static final boolean PRINT_DOMINATORS = false;
 	private static final boolean PRINT_DOMINATORS_INFO = false;
 
@@ -55,6 +57,11 @@ public class DotGraphVisitor extends AbstractVisitor {
 	private DotGraphVisitor(boolean useRegions, boolean rawInsn) {
 		this.useRegions = useRegions;
 		this.rawInsn = rawInsn;
+	}
+
+	@Override
+	public String getName() {
+		return "DotGraphVisitor";
 	}
 
 	@Override
@@ -84,7 +91,7 @@ public class DotGraphVisitor extends AbstractVisitor {
 
 		public void process(MethodNode mth) {
 			dot.startLine("digraph \"CFG for");
-			dot.add(escape(mth.getParentClass() + "." + mth.getMethodInfo().getShortId()));
+			dot.add(escape(mth.getMethodInfo().getFullId()));
 			dot.add("\" {");
 
 			BlockNode enterBlock = mth.getEnterBlock();
@@ -208,6 +215,8 @@ public class DotGraphVisitor extends AbstractVisitor {
 				dot.add('|');
 				dot.startLine("doms: ").add(escape(block.getDoms()));
 				dot.startLine("\\lidom: ").add(escape(block.getIDom()));
+				dot.startLine("\\lpost-doms: ").add(escape(block.getPostDoms()));
+				dot.startLine("\\lpost-idom: ").add(escape(block.getIPostDom()));
 				dot.startLine("\\ldom-f: ").add(escape(block.getDomFrontier()));
 				dot.startLine("\\ldoms-on: ").add(escape(Utils.listToString(block.getDominatesOn())));
 				dot.startLine("\\l");
@@ -284,15 +293,11 @@ public class DotGraphVisitor extends AbstractVisitor {
 
 		private String insertInsns(MethodNode mth, IBlock block) {
 			if (rawInsn) {
-				StringBuilder str = new StringBuilder();
+				StringBuilder sb = new StringBuilder();
 				for (InsnNode insn : block.getInstructions()) {
-					str.append(escape(insn + " " + insn.getAttributesString()));
-					if (insn.getSourceLine() != 0) {
-						str.append(" (LINE:").append(insn.getSourceLine()).append(')');
-					}
-					str.append(NL);
+					sb.append(escape(insn)).append(NL);
 				}
-				return str.toString();
+				return sb.toString();
 			} else {
 				ICodeWriter code = new SimpleCodeWriter();
 				List<InsnNode> instructions = block.getInstructions();
@@ -321,8 +326,7 @@ public class DotGraphVisitor extends AbstractVisitor {
 					.replace("\"", "\\\"")
 					.replace("-", "\\-")
 					.replace("|", "\\|")
-					.replace(ICodeWriter.NL, NL)
-					.replace("\n", NL);
+					.replaceAll("\\R", NLQR);
 		}
 	}
 }

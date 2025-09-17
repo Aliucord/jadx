@@ -2,7 +2,6 @@ package jadx.api;
 
 import java.util.Collections;
 import java.util.List;
-import java.util.Objects;
 import java.util.stream.Collectors;
 
 import org.jetbrains.annotations.ApiStatus;
@@ -10,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import jadx.api.metadata.ICodeAnnotation;
+import jadx.api.metadata.ICodeNodeRef;
 import jadx.core.dex.attributes.AType;
 import jadx.core.dex.attributes.nodes.MethodOverrideAttr;
 import jadx.core.dex.info.AccessInfo;
@@ -78,15 +78,9 @@ public final class JavaMethod implements JavaNode {
 			return Collections.emptyList();
 		}
 		JadxDecompiler decompiler = getDeclaringClass().getRootDecompiler();
-		return ovrdAttr.getRelatedMthNodes().stream()
-				.map(m -> {
-					JavaMethod javaMth = decompiler.convertMethodNode(m);
-					if (javaMth == null) {
-						LOG.warn("Failed convert to java method: {}", m);
-					}
-					return javaMth;
-				})
-				.filter(Objects::nonNull)
+		return ovrdAttr.getRelatedMthNodes()
+				.stream()
+				.map(decompiler::convertMethodNode)
 				.collect(Collectors.toList());
 	}
 
@@ -103,6 +97,10 @@ public final class JavaMethod implements JavaNode {
 		return mth.getDefPosition();
 	}
 
+	public String getCodeStr() {
+		return mth.getCodeStr();
+	}
+
 	@Override
 	public void removeAlias() {
 		this.mth.getMethodInfo().removeAlias();
@@ -114,6 +112,11 @@ public final class JavaMethod implements JavaNode {
 			return ann.equals(mth);
 		}
 		return false;
+	}
+
+	@Override
+	public ICodeNodeRef getCodeNodeRef() {
+		return mth;
 	}
 
 	/**

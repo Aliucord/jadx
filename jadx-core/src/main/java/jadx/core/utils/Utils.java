@@ -3,10 +3,12 @@ package jadx.core.utils;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -14,8 +16,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import jadx.api.ICodeWriter;
@@ -41,11 +47,25 @@ public class Utils {
 		return obj;
 	}
 
+	public static String cutObject(String obj) {
+		if (obj.charAt(0) == 'L') {
+			return obj.substring(1, obj.length() - 1);
+		}
+		return obj;
+	}
+
 	public static String makeQualifiedObjectName(String obj) {
 		return 'L' + obj.replace('.', '/') + ';';
 	}
 
+	@SuppressWarnings("StringRepeatCanBeUsed")
 	public static String strRepeat(String str, int count) {
+		if (count < 1) {
+			return "";
+		}
+		if (count == 1) {
+			return str;
+		}
 		StringBuilder sb = new StringBuilder(str.length() * count);
 		for (int i = 0; i < count; i++) {
 			sb.append(str);
@@ -116,13 +136,37 @@ public class Utils {
 		return sb.toString();
 	}
 
+	public static String currentStackTrace() {
+		return getStackTrace(new Exception());
+	}
+
+	public static String currentStackTrace(int skipFrames) {
+		Exception e = new Exception();
+		StackTraceElement[] stackTrace = e.getStackTrace();
+		int len = stackTrace.length;
+		if (skipFrames < len) {
+			e.setStackTrace(Arrays.copyOfRange(stackTrace, skipFrames, len));
+		}
+		return getStackTrace(e);
+	}
+
+	public static String getFullStackTrace(Throwable throwable) {
+		return getStackTrace(throwable, false);
+	}
+
 	public static String getStackTrace(Throwable throwable) {
+		return getStackTrace(throwable, true);
+	}
+
+	private static String getStackTrace(Throwable throwable, boolean filter) {
 		if (throwable == null) {
 			return "";
 		}
 		StringWriter sw = new StringWriter();
 		PrintWriter pw = new PrintWriter(sw, true);
-		filterRecursive(throwable);
+		if (filter) {
+			filterRecursive(throwable);
+		}
 		throwable.printStackTrace(pw);
 		return sw.getBuffer().toString();
 	}
@@ -345,6 +389,27 @@ public class Utils {
 		return map;
 	}
 
+	/**
+	 * Simple DFS visit for tree (cycles not allowed)
+	 */
+	public static <T> void treeDfsVisit(T root, Function<T, List<T>> childrenProvider, Consumer<T> visitor) {
+		multiRootTreeDfsVisit(Collections.singletonList(root), childrenProvider, visitor);
+	}
+
+	public static <T> void multiRootTreeDfsVisit(List<T> roots, Function<T, List<T>> childrenProvider, Consumer<T> visitor) {
+		Deque<T> queue = new ArrayDeque<>(roots);
+		while (true) {
+			T current = queue.pollLast();
+			if (current == null) {
+				return;
+			}
+			visitor.accept(current);
+			for (T child : childrenProvider.apply(current)) {
+				queue.addLast(child);
+			}
+		}
+	}
+
 	@Nullable
 	public static <T> T getOne(@Nullable List<T> list) {
 		if (list == null || list.size() != 1) {
@@ -359,6 +424,15 @@ public class Utils {
 			return null;
 		}
 		return collection.iterator().next();
+	}
+
+	public static <T> boolean isSetContainsAny(Set<T> inputSet, Set<T> searchKeys) {
+		for (T t : inputSet) {
+			if (searchKeys.contains(t)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	@Nullable
@@ -431,5 +505,52 @@ public class Utils {
 		if (Thread.currentThread().isInterrupted()) {
 			throw new JadxRuntimeException("Thread interrupted");
 		}
+	}
+
+	public static ThreadFactory simpleThreadFactory(String name) {
+		return new SimpleThreadFactory(name);
+	}
+
+	private static final class SimpleThreadFactory implements ThreadFactory {
+		private static final AtomicInteger POOL = new AtomicInteger(0);
+		private final AtomicInteger number = new AtomicInteger(0);
+		private final String name;
+
+		public SimpleThreadFactory(String name) {
+			this.name = name;
+		}
+
+		@Override
+		public Thread newThread(@NotNull Runnable r) {
+			return new Thread(r, "jadx-" + name
+					+ '-' + POOL.incrementAndGet()
+					+ '-' + number.incrementAndGet());
+		}
+	}
+
+	/**
+	 * @deprecated env vars shouldn't be used in core modules.
+	 *             Prefer to parse in `app` (use JadxCommonEnv from 'app-commons') and set in jadx args.
+	 */
+	@Deprecated
+	public static boolean getEnvVarBool(String varName, boolean defValue) {
+		String strValue = System.getenv(varName);
+		if (strValue == null) {
+			return defValue;
+		}
+		return strValue.equalsIgnoreCase("true");
+	}
+
+	/**
+	 * @deprecated env vars shouldn't be used in core modules.
+	 *             Prefer to parse in `app` (use JadxCommonEnv from 'app-commons') and set in jadx args.
+	 */
+	@Deprecated
+	public static int getEnvVarInt(String varName, int defValue) {
+		String strValue = System.getenv(varName);
+		if (strValue == null) {
+			return defValue;
+		}
+		return Integer.parseInt(strValue);
 	}
 }
