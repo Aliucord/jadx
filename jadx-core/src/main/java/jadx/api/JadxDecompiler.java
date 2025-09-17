@@ -322,7 +322,9 @@ public final class JadxDecompiler implements Closeable {
 		} else {
 			gradleExport = null;
 			outDirs = new OutDirs(args.getOutDirSrc(), args.getOutDirRes());
-			outDirs.makeDirs();
+
+			if (!outDirs.getSrcOutDir().getName().endsWith(".jar"))
+				outDirs.makeDirs();
 		}
 
 		TaskExecutor executor = new TaskExecutor();

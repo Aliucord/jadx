@@ -90,6 +90,7 @@ public class SaveCode {
 				jarOutputStream = new JarOutputStream(Files.newOutputStream(file.toPath()));
 			} catch (IOException e) {
 				LOG.error("Failed to create .jar file", e);
+				throw new RuntimeException("Failed to create .jar file", e);
 			}
 		}
 
