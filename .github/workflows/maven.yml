@@ -1,8 +1,7 @@
-name: Build Artifacts
+name: Build Artifacts and Publish to Maven
 
 on:
-  push:
-    branches: [ master, build-test ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -28,9 +27,13 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Build
-        run: ./gradlew dist distWin
+        run: ./gradlew dist distWin publish
         env:
           JADX_BUILD_JAVA_VERSION: 11
+          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+          MAVEN_RELEASE_USERNAME: ${{ secrets.MAVEN_RELEASE_USERNAME }}
+          MAVEN_RELEASE_PASSWORD: ${{ secrets.MAVEN_RELEASE_PASSWORD }}
 
       - name: Save bundle artifact
         uses: actions/upload-artifact@v4
@@ -51,40 +54,3 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  build-win-bundle:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Set up JDK
-        uses: oracle-actions/setup-java@v1
-        with:
-          release: 24
-
-      - name: Print Java version
-        shell: bash
-        run: java -version
-
-      - name: Set jadx version
-        shell: bash
-        run: |
-          JADX_REV=$(git rev-list --count HEAD)
-          JADX_VERSION="r${JADX_REV}.${GITHUB_SHA:0:7}"
-          echo "JADX_VERSION=$JADX_VERSION" >> $GITHUB_ENV
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Build
-        run: ./gradlew dist -PbundleJRE=true
-
-      - name: Save Windows with JRE bundle artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ format('jadx-gui-{0}-with-jre-win', env.JADX_VERSION) }}
-          # Upload unpacked files for now
-          path: jadx-gui/build/jadx-gui-with-jre-win/*
-          if-no-files-found: error
-          retention-days: 14

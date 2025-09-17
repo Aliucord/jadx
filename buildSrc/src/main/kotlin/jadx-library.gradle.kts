@@ -7,7 +7,7 @@ plugins {
 
 val jadxVersion: String by rootProject.extra
 
-group = "io.github.skylot"
+group = "com.aliucord.jadx"
 version = jadxVersion
 
 java {
@@ -56,12 +56,13 @@ publishing {
 	}
 	repositories {
 		maven {
-			val releasesRepoUrl = uri("https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/")
-			val snapshotsRepoUrl = uri("https://s01.oss.sonatype.org/content/repositories/snapshots/")
-			url = if (version.toString().endsWith("SNAPSHOT")) snapshotsRepoUrl else releasesRepoUrl
+			val releasesRepoUrl = uri("https://maven.aliucord.com/releases")
+			val snapshotsRepoUrl = uri("https://maven.aliucord.com/snapshots")
+			val isSnapshot = version.toString().endsWith("SNAPSHOT")
+			url = if (isSnapshot) snapshotsRepoUrl else releasesRepoUrl
 			credentials {
-				username = project.properties["ossrhUser"].toString()
-				password = project.properties["ossrhPassword"].toString()
+				username = System.getenv(if (isSnapshot) "MAVEN_USERNAME" else "MAVEN_RELEASE_USERNAME")
+				password = System.getenv(if (isSnapshot) "MAVEN_PASSWORD" else "MAVEN_RELEASE_PASSWORD")
 			}
 		}
 	}
