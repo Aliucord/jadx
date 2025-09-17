@@ -11,7 +11,7 @@ plugins {
 	id("com.diffplug.spotless") version "6.25.0"
 }
 
-val jadxVersion by extra { System.getenv("JADX_VERSION") ?: "dev" }
+val jadxVersion by extra.properties
 println("jadx version: $jadxVersion")
 version = jadxVersion
 

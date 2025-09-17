@@ -34,23 +34,3 @@ jobs:
           MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
           MAVEN_RELEASE_USERNAME: ${{ secrets.MAVEN_RELEASE_USERNAME }}
           MAVEN_RELEASE_PASSWORD: ${{ secrets.MAVEN_RELEASE_PASSWORD }}
-
-      - name: Save bundle artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ format('jadx-{0}', env.JADX_VERSION) }}
-          # Waiting fix for https://github.com/actions/upload-artifact/issues/39 to upload zip file
-          # Upload unpacked files for now
-          path: build/jadx/**/*
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Save Windows bundle artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ format('jadx-gui-{0}-no-jre-win', env.JADX_VERSION) }}
-          # Upload unpacked files for now
-          path: jadx-gui/build/jadx-gui-win/*
-          if-no-files-found: error
-          retention-days: 14
-
