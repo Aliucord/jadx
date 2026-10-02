@@ -2,10 +2,12 @@ package jadx.plugins.input.xapk;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -73,23 +75,34 @@ public class XApkLoader {
 		}
 	}
 
-	private XApkData unpackXApk(File xapkFile, XApkManifest xApkManifest, ZipContent content) throws IOException {
-		Set<String> declaredApks = xApkManifest.getSplitApks().stream()
-				.map(SplitApk::getFile).collect(Collectors.toSet());
+	private XApkData unpackXApk(File xapkFile, XApkManifest xApkManifest, ZipContent content) {
+		Set<String> declaredApks = xApkManifest.getSplitApks()
+				.stream()
+				.map(SplitApk::getFile)
+				.collect(Collectors.toSet());
 		List<Path> apks = new ArrayList<>(declaredApks.size());
-		List<Path> files = new ArrayList<>();
-
-		String dirName = xapkFile.getName() + '_' + System.currentTimeMillis();
+		List<Path> files = new ArrayList<>(content.getEntries().size());
+		String dirName = FileUtils.md5Sum(xapkFile.getAbsolutePath());
 		Path tmpDir = context.files().getPluginTempDir().resolve(dirName);
 		FileUtils.makeDirs(tmpDir);
 		for (IZipEntry entry : content.getEntries()) {
-			String fileName = entry.getName();
-			Path file = tmpDir.resolve(fileName);
-			Files.write(file, entry.getBytes());
-			if (declaredApks.contains(fileName)) {
-				apks.add(file);
-			} else {
-				files.add(file);
+			if (entry.isDirectory()) {
+				continue;
+			}
+			try {
+				String fileName = entry.getName();
+				Path file = tmpDir.resolve(fileName);
+				FileUtils.makeDirsForFile(file);
+				try (InputStream inputStream = entry.getInputStream()) {
+					Files.copy(inputStream, file, StandardCopyOption.REPLACE_EXISTING);
+				}
+				if (declaredApks.contains(fileName)) {
+					apks.add(file);
+				} else {
+					files.add(file);
+				}
+			} catch (Exception e) {
+				LOG.error("Failed to unpack XApk entry: {}", entry.getName(), e);
 			}
 		}
 		return new XApkData(xApkManifest, tmpDir, apks, files);

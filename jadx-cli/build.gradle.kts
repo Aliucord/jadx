@@ -4,13 +4,14 @@ plugins {
 	id("application")
 
 	// use shadow only for application scripts, jar will be copied from jadx-gui
-	id("com.gradleup.shadow") version "8.3.8"
+	alias(libs.plugins.shadow)
 }
 
 dependencies {
 	implementation(project(":jadx-core"))
 	implementation(project(":jadx-plugins-tools"))
 	implementation(project(":jadx-commons:jadx-app-commons"))
+	implementation(project(":jadx-commons:jadx-analysis"))
 
 	runtimeOnly(project(":jadx-plugins:jadx-dex-input"))
 	runtimeOnly(project(":jadx-plugins:jadx-java-input"))
@@ -19,13 +20,14 @@ dependencies {
 	runtimeOnly(project(":jadx-plugins:jadx-rename-mappings"))
 	runtimeOnly(project(":jadx-plugins:jadx-kotlin-metadata"))
 	runtimeOnly(project(":jadx-plugins:jadx-kotlin-source-debug-extension"))
-	runtimeOnly(project(":jadx-plugins:jadx-script:jadx-script-plugin"))
 	runtimeOnly(project(":jadx-plugins:jadx-xapk-input"))
 	runtimeOnly(project(":jadx-plugins:jadx-aab-input"))
 	runtimeOnly(project(":jadx-plugins:jadx-apkm-input"))
+	runtimeOnly(project(":jadx-plugins:jadx-apks-input"))
 
-	implementation("org.jcommander:jcommander:2.0")
-	implementation("ch.qos.logback:logback-classic:1.5.18")
+	implementation(libs.jcommander)
+	implementation(libs.logback.classic)
+	implementation(libs.gson)
 }
 
 application {
@@ -36,6 +38,7 @@ application {
 			"-XX:+IgnoreUnrecognizedVMOptions",
 			"-Xms256M",
 			"-XX:MaxRAMPercentage=70.0",
+			"-XX:ParallelGCThreads=3",
 			// disable zip checks (#1962)
 			"-Djdk.util.zip.disableZip64ExtraFieldValidation=true",
 			// Foreign API access for 'directories' library (Windows only)

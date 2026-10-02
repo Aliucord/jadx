@@ -84,6 +84,11 @@ public class ApkSignatureNode extends JNode {
 	}
 
 	@Override
+	public boolean hasContent() {
+		return true;
+	}
+
+	@Override
 	public ContentPanel getContentPanel(TabbedPane tabbedPane) {
 		ApkSignatureNode.tabbedPane = tabbedPane;
 		return new HtmlPanel(tabbedPane, this);
@@ -182,20 +187,13 @@ public class ApkSignatureNode extends JNode {
 				}
 				builder.append("</b></p>");
 
-				final String err = NLS.str("apkSignature.errors");
-				final String warn = NLS.str("apkSignature.warnings");
-				final String sigSuccKey = "apkSignature.signatureSuccess";
-				final String sigFailKey = "apkSignature.signatureFailed";
-
+				String err = NLS.str("apkSignature.errors");
+				String warn = NLS.str("apkSignature.warnings");
 				ApkSignatureNode parentNode = node;
-
 				writeIssues(builder, err, result.getErrors());
 
 				if (!result.getV1SchemeSigners().isEmpty()) {
-					builder.append("<h2>");
-					builder.escape(NLS.str(result.isVerifiedUsingV1Scheme() ? sigSuccKey : sigFailKey, 1));
-					builder.append("</h2>\n");
-
+					addVerifyResult(builder, result.isVerifiedUsingV1Scheme(), 1);
 					builder.append("<blockquote>");
 					for (ApkVerifier.Result.V1SchemeSignerInfo signer : result.getV1SchemeSigners()) {
 						builder.append("<h3>");
@@ -213,9 +211,7 @@ public class ApkSignatureNode extends JNode {
 					builder.append("</blockquote>");
 				}
 				if (!result.getV2SchemeSigners().isEmpty()) {
-					builder.append("<h2>");
-					builder.escape(NLS.str(result.isVerifiedUsingV2Scheme() ? sigSuccKey : sigFailKey, 2));
-					builder.append("</h2>\n");
+					addVerifyResult(builder, result.isVerifiedUsingV2Scheme(), 2);
 
 					builder.append("<blockquote>");
 					for (ApkVerifier.Result.V2SchemeSignerInfo signer : result.getV2SchemeSigners()) {
@@ -231,9 +227,7 @@ public class ApkSignatureNode extends JNode {
 					builder.append("</blockquote>");
 				}
 				if (!result.getV3SchemeSigners().isEmpty()) {
-					builder.append("<h2>");
-					builder.escape(NLS.str(result.isVerifiedUsingV3Scheme() ? sigSuccKey : sigFailKey, 3));
-					builder.append("</h2>\n");
+					addVerifyResult(builder, result.isVerifiedUsingV3Scheme(), 3);
 
 					builder.append("<blockquote>");
 					for (ApkVerifier.Result.V3SchemeSignerInfo signer : result.getV3SchemeSigners()) {
@@ -249,9 +243,7 @@ public class ApkSignatureNode extends JNode {
 					builder.append("</blockquote>");
 				}
 				if (!result.getV31SchemeSigners().isEmpty()) {
-					builder.append("<h2>");
-					builder.escape(NLS.str(result.isVerifiedUsingV31Scheme() ? sigSuccKey : sigFailKey, 31));
-					builder.append("</h2>\n");
+					addVerifyResult(builder, result.isVerifiedUsingV31Scheme(), 31);
 
 					builder.append("<blockquote>");
 					for (ApkVerifier.Result.V3SchemeSignerInfo signer : result.getV31SchemeSigners()) {
@@ -282,6 +274,16 @@ public class ApkSignatureNode extends JNode {
 			}
 		}
 
+		private static void addVerifyResult(StringEscapeUtils.Builder builder, boolean verifyResult, int verNum) {
+			builder.append("<h2>");
+			if (verifyResult) {
+				builder.escape(NLS.str("apkSignature.signatureSuccess", verNum));
+			} else {
+				builder.escape(NLS.str("apkSignature.signatureFailed", verNum));
+			}
+			builder.append("</h2>\n");
+		}
+
 		@Override
 		protected void done() {
 			try {
@@ -301,8 +303,7 @@ public class ApkSignatureNode extends JNode {
 				builder.append("<h1>");
 				builder.escape(NLS.str("apkSignature.exception"));
 				builder.append("</h1><pre>");
-				Throwable cause = (e instanceof ExecutionException) ? e.getCause() : e;
-				builder.escape(ExceptionUtils.getStackTrace(cause));
+				builder.escape(ExceptionUtils.getStackTrace(e instanceof ExecutionException ? e.getCause() : e));
 				builder.append("</pre>");
 				node.content = new SimpleCodeInfo(builder.toString());
 

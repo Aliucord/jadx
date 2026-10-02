@@ -6,23 +6,17 @@ dependencies {
 	api(project(":jadx-plugins:jadx-input-api"))
 	api(project(":jadx-commons:jadx-zip"))
 
-	implementation("com.google.code.gson:gson:2.13.1")
-
-	testImplementation("org.apache.commons:commons-lang3:3.18.0")
+	implementation(libs.gson)
 
 	testImplementation(project(":jadx-plugins:jadx-dex-input"))
-	testRuntimeOnly(project(":jadx-plugins:jadx-smali-input"))
-	testRuntimeOnly(project(":jadx-plugins:jadx-java-convert"))
-	testRuntimeOnly(project(":jadx-plugins:jadx-java-input"))
-	testRuntimeOnly(project(":jadx-plugins:jadx-raung-input"))
+	testImplementation(project(":jadx-plugins:jadx-smali-input"))
+	testImplementation(project(":jadx-plugins:jadx-java-convert"))
+	testImplementation(project(":jadx-plugins:jadx-java-input"))
+	testImplementation(project(":jadx-plugins:jadx-raung-input"))
 
-	testImplementation("org.eclipse.jdt:ecj") {
-		version {
-			prefer("3.33.0")
-			strictly("[3.33, 3.34[") // from 3.34 compiled with Java 17
-		}
-	}
-	testImplementation("tools.profiler:async-profiler:4.0")
+	testImplementation(libs.commons.lang3)
+	testImplementation(libs.eclipse.jdt.ecj)
+	testImplementation(libs.async.profiler)
 }
 
 val jadxTestJavaVersion = getTestJavaVersion()
@@ -30,7 +24,10 @@ val jadxTestJavaVersion = getTestJavaVersion()
 fun getTestJavaVersion(): Int? {
 	val envVarName = "JADX_TEST_JAVA_VERSION"
 	val testJavaVer = System.getenv(envVarName)?.toInt() ?: return null
-	val currentJavaVer = java.toolchain.languageVersion.get().asInt()
+	val currentJavaVer =
+		java.toolchain.languageVersion
+			.get()
+			.asInt()
 	if (testJavaVer < currentJavaVer) {
 		throw GradleException("'$envVarName' can't be set to lower version than $currentJavaVer")
 	}
@@ -52,4 +49,23 @@ tasks.named<Test>("test") {
 
 	// exclude temp tests
 	exclude("**/tmp/*")
+
+	// maxHeapSize = "4g"
+}
+
+tasks.processResources {
+	val jadxVersion = rootProject.extra["jadxVersion"] as String
+	val jadxBundleType = project.findProperty("jadxBundleType") as String? ?: ""
+
+	inputs.property("jadxVersion", jadxVersion)
+	inputs.property("jadxBundleType", jadxBundleType)
+
+	filesMatching("jadx-build-info.properties") {
+		expand(
+			mapOf(
+				"jadxVersion" to jadxVersion,
+				"jadxBundleType" to jadxBundleType,
+			),
+		)
+	}
 }

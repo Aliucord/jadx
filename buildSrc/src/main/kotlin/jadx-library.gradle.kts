@@ -5,7 +5,7 @@ plugins {
 	id("signing")
 }
 
-val jadxVersion: String by rootProject.extra
+val jadxVersion = rootProject.extra["jadxVersion"] as String
 
 group = "com.aliucord.jadx"
 version = jadxVersion
@@ -42,7 +42,7 @@ publishing {
 					developer {
 						id.set("skylot")
 						name.set("Skylot")
-						email.set(project.properties["libEmail"].toString())
+						email.set(project.findProperty("libEmail") as String? ?: "" )
 						url.set("https://github.com/skylot")
 					}
 				}

@@ -1,15 +1,17 @@
 package jadx.gui.plugins.context;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.jetbrains.annotations.Nullable;
+import javax.swing.Action;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import jadx.core.plugins.PluginContext;
+import jadx.core.plugins.PluginRuntime;
+import jadx.core.utils.Utils;
+import jadx.gui.settings.data.ITabStatePersist;
 import jadx.gui.ui.MainWindow;
 import jadx.gui.ui.codearea.CodeArea;
 import jadx.gui.ui.codearea.JNodePopupBuilder;
@@ -19,29 +21,39 @@ public class CommonGuiPluginsContext {
 	private static final Logger LOG = LoggerFactory.getLogger(CommonGuiPluginsContext.class);
 
 	private final MainWindow mainWindow;
-	private final Map<PluginContext, GuiPluginContext> pluginsMap = new HashMap<>();
 
-	private final List<CodePopupAction> codePopupActionList = new ArrayList<>();
-	private final List<TreePopupMenuEntry> treePopupMenuEntries = new ArrayList<>();
+	private final GuiPluginsRegistry globalScope = new GuiPluginsRegistry();
+	private final GuiPluginsRegistry projectScope = new GuiPluginsRegistry();
+
+	private final Map<PluginRuntime, GuiPluginContext> globalPlugins = new HashMap<>();
+	private final Map<PluginRuntime, GuiPluginContext> projectPlugins = new HashMap<>();
 
 	public CommonGuiPluginsContext(MainWindow mainWindow) {
 		this.mainWindow = mainWindow;
 	}
 
-	public GuiPluginContext buildForPlugin(PluginContext pluginContext) {
-		GuiPluginContext guiPluginContext = new GuiPluginContext(this, pluginContext);
-		pluginsMap.put(pluginContext, guiPluginContext);
+	public GuiPluginContext buildForPlugin(PluginRuntime pluginRuntime, boolean isGlobalPlugin) {
+		GuiPluginsRegistry registry = isGlobalPlugin ? globalScope : projectScope;
+		GuiPluginContext guiPluginContext = new GuiPluginContext(this, registry, pluginRuntime);
+		(isGlobalPlugin ? globalPlugins : projectPlugins).put(pluginRuntime, guiPluginContext);
 		return guiPluginContext;
 	}
 
-	public @Nullable GuiPluginContext getPluginGuiContext(PluginContext pluginContext) {
-		return pluginsMap.get(pluginContext);
+	public void copyGlobalPluginData(PluginRuntime globalContext, PluginRuntime projectContext) {
+		GuiPluginContext globalGuiContext = globalPlugins.get(globalContext);
+		GuiPluginContext projectGuiContext = projectPlugins.get(projectContext);
+		if (globalGuiContext != null && projectGuiContext != null) {
+			projectGuiContext.setCustomSettings(globalGuiContext.getCustomSettingsGroup());
+		}
 	}
 
-	public void reset() {
-		codePopupActionList.clear();
-		treePopupMenuEntries.clear();
+	public void resetProjectScope() {
+		projectScope.clear();
+		projectPlugins.clear();
 		mainWindow.resetPluginsMenu();
+		for (Action menuAction : globalScope.getMenuActions()) {
+			mainWindow.addToPluginsMenu(menuAction);
+		}
 	}
 
 	public MainWindow getMainWindow() {
@@ -49,14 +61,22 @@ public class CommonGuiPluginsContext {
 	}
 
 	public List<CodePopupAction> getCodePopupActionList() {
-		return codePopupActionList;
+		return Utils.mergeLists(globalScope.getCodePopupActions(), projectScope.getCodePopupActions());
 	}
 
 	public List<TreePopupMenuEntry> getTreePopupMenuEntries() {
-		return treePopupMenuEntries;
+		return Utils.mergeLists(globalScope.getTreePopupMenuEntries(), projectScope.getTreePopupMenuEntries());
 	}
 
-	public void addMenuAction(String name, Runnable action) {
+	public List<ITreeInputCategory> getTreeInputCategories() {
+		return Utils.mergeLists(globalScope.getTreeInputCategories(), projectScope.getTreeInputCategories());
+	}
+
+	public List<ITabStatePersist> getTabStatePersistAdapters() {
+		return Utils.mergeLists(globalScope.getTabStatePersistAdapters(), projectScope.getTabStatePersistAdapters());
+	}
+
+	void addMenuAction(GuiPluginsRegistry registry, String name, Runnable action) {
 		ActionHandler item = new ActionHandler(ev -> {
 			try {
 				mainWindow.getBackgroundExecutor().execute(name, action);
@@ -65,10 +85,12 @@ public class CommonGuiPluginsContext {
 			}
 		});
 		item.setNameAndDesc(name);
+		registry.getMenuActions().add(item);
 		mainWindow.addToPluginsMenu(item);
 	}
 
 	public void appendPopupMenus(CodeArea codeArea, JNodePopupBuilder popup) {
+		List<CodePopupAction> codePopupActionList = getCodePopupActionList();
 		if (codePopupActionList.isEmpty()) {
 			return;
 		}

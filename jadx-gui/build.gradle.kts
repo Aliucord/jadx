@@ -1,14 +1,18 @@
+import org.gradle.nativeplatform.platform.internal.DefaultNativePlatform
+
 plugins {
 	id("jadx-kotlin")
 	id("application")
 	id("jadx-library")
-	id("edu.sc.seis.launch4j") version "3.0.6"
-	id("com.gradleup.shadow") version "8.3.8"
-	id("org.beryx.runtime") version "1.13.1"
+
+	alias(libs.plugins.shadow)
+	alias(libs.plugins.launch4j)
+	alias(libs.plugins.beryx.runtime)
 }
 
 dependencies {
 	implementation(project(":jadx-core"))
+	implementation(project(":jadx-gui-api"))
 	implementation(project(":jadx-cli"))
 	implementation(project(":jadx-plugins-tools"))
 	implementation(project(":jadx-commons:jadx-app-commons"))
@@ -16,51 +20,44 @@ dependencies {
 	// import mappings
 	implementation(project(":jadx-plugins:jadx-rename-mappings"))
 
-	// jadx-script autocomplete support
-	implementation(project(":jadx-plugins:jadx-script:jadx-script-ide"))
-	implementation(project(":jadx-plugins:jadx-script:jadx-script-runtime"))
-	implementation(kotlin("scripting-common"))
-	implementation("com.fifesoft:autocomplete:3.3.2")
+	implementation(libs.jcommander)
+	implementation(libs.logback.classic)
+	implementation(libs.oshai.kotlin.logging.jvm)
 
-	// use KtLint for format and check jadx scripts
-	implementation("com.pinterest.ktlint:ktlint-rule-engine:1.7.0")
-	implementation("com.pinterest.ktlint:ktlint-ruleset-standard:1.7.0")
+	implementation(libs.bundles.rsta)
+	implementation(libs.fontchooser)
+	implementation(libs.image.viewer)
+	implementation(libs.imageio.webp) // WebP support for image viewer
 
-	implementation("org.jcommander:jcommander:2.0")
-	implementation("ch.qos.logback:logback-classic:1.5.18")
-	implementation("io.github.oshai:kotlin-logging-jvm:7.0.7")
+	implementation(libs.bundles.flatlaf)
 
-	implementation("com.fifesoft:rsyntaxtextarea:3.6.0")
-	implementation("org.drjekyll:fontchooser:3.1.0")
-	implementation("hu.kazocsaba:image-viewer:1.2.3")
-	implementation("com.twelvemonkeys.imageio:imageio-webp:3.12.0") // WebP support for image viewer
+	implementation(libs.gson)
+	implementation(libs.commons.lang3)
+	implementation(libs.commons.text)
+	implementation(libs.commons.io)
 
-	implementation("com.formdev:flatlaf:3.6.1")
-	implementation("com.formdev:flatlaf-intellij-themes:3.6.1")
-	implementation("com.formdev:flatlaf-extras:3.6.1")
+	implementation(libs.rxjava)
+	implementation(libs.rxjava.swing)
 
-	implementation("com.google.code.gson:gson:2.13.1")
-	implementation("org.apache.commons:commons-lang3:3.18.0")
-	implementation("org.apache.commons:commons-text:1.13.1")
-	implementation("commons-io:commons-io:2.20.0")
-
-	implementation("io.reactivex.rxjava3:rxjava:3.1.11")
-	implementation("com.github.akarnokd:rxjava3-swing:3.1.1")
-	implementation("com.android.tools.build:apksig:8.11.1")
-	implementation("io.github.skylot:jdwp:2.0.0")
+	implementation(libs.apksig)
+	implementation(libs.jdwp)
 
 	// Library for hex viewing data
-	val bined = "0.2.2"
-	implementation("org.exbin.bined:bined-swing:$bined")
-	implementation("org.exbin.bined:bined-highlight-swing:$bined")
-	implementation("org.exbin.bined:bined-swing-section:$bined")
-	implementation("org.exbin.auxiliary:binary_data:$bined")
-	implementation("org.exbin.auxiliary:binary_data-array:$bined")
+	implementation(libs.bundles.bined)
 
-	testImplementation(project.project(":jadx-core").sourceSets.getByName("test").output)
+	// Library for rendering GraphViz DOT files
+	implementation(libs.bundles.graphviz)
+
+	testImplementation(
+		project
+			.project(":jadx-core")
+			.sourceSets
+			.getByName("test")
+			.output,
+	)
 }
 
-val jadxVersion: String by rootProject.extra
+val jadxVersion = rootProject.extra["jadxVersion"] as String
 
 tasks.test {
 	exclude("**/tmp/*")
@@ -105,9 +102,30 @@ tasks.jar {
 
 tasks.shadowJar {
 	isZip64 = true
+
+	// FAIL here used to catch all issues with duplicate files
+	// and may break build after new deps added
+	duplicatesStrategy = DuplicatesStrategy.FAIL
+
+	filesMatching("META-INF/services/**") {
+		// allow to merge service files
+		duplicatesStrategy = DuplicatesStrategy.INCLUDE
+	}
 	mergeServiceFiles()
+
+	filesMatching("META-INF/*.kotlin_module") {
+		// Kotlin modules will be merged
+		duplicatesStrategy = DuplicatesStrategy.WARN
+	}
+	filesMatching("com/eclipsesource/v8/**/*") {
+		// same files from Windows and Linux versions of com.eclipsesource.j2v8
+		duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+	}
+	// can't keep all LICENSE and NOTICE files from different libs
+	exclude("META-INF/LICENSE*", "META-INF/NOTICE*", "LICENSE", "NOTICE")
+
 	manifest {
-		from(tasks.jar.get().manifest)
+		attributes(mapOf("Main-Class" to application.mainClass.get()))
 	}
 }
 
@@ -121,12 +139,14 @@ project.components.withType(AdhocComponentWithVariants::class.java).forEach { c 
 tasks.startShadowScripts {
 	doLast {
 		val newWindowsScriptContent =
-			windowsScript.readText()
+			windowsScript
+				.readText()
 				.replace("java.exe", "javaw.exe")
 				.replace("\"%JAVA_EXE%\" %DEFAULT_JVM_OPTS%", "start \"jadx-gui\" /B \"%JAVA_EXE%\" %DEFAULT_JVM_OPTS%")
 		// Add launch script path as a property
 		val newUnixScriptContent =
-			unixScript.readText()
+			unixScript
+				.readText()
 				.replace(
 					Regex("DEFAULT_JVM_OPTS=.+", RegexOption.MULTILINE),
 					{ result -> result.value + "\" \\\"-Djadx.launchScript.path=\$(realpath $0)\\\"\"" },
@@ -140,7 +160,7 @@ launch4j {
 	mainClassName.set(application.mainClass.get())
 	copyConfigurable.set(listOf<Any>())
 	dontWrapJar.set(true)
-	icon.set("$projectDir/src/main/resources/logos/jadx-logo.ico")
+	icon.set("$projectDir/dist/windows/jadx-logo.ico")
 	outfile.set("jadx-gui-$jadxVersion.exe")
 	version.set(jadxVersion)
 	copyright.set("Skylot")
@@ -153,21 +173,26 @@ launch4j {
 	supportUrl.set("https://github.com/skylot/jadx")
 
 	bundledJrePath.set(if (project.hasProperty("bundleJRE")) "%EXEDIR%/jre" else "%JAVA_HOME%")
-	classpath.set(tasks.getByName("shadowJar").outputs.files.map { "%EXEDIR%/lib/${it.name}" }.sorted().toList())
-	println("Launch4J classpath: ${classpath.get()}")
+	classpath.set(
+		tasks
+			.getByName("shadowJar")
+			.outputs.files
+			.map { "%EXEDIR%/lib/${it.name}" }
+			.sorted()
+			.toList(),
+	)
 
 	chdir.set("") // don't change current dir
 	libraryDir.set("") // don't add any libs
 }
 
-fun escapeJVMOptions(): List<String> {
-	return application.applicationDefaultJvmArgs
+fun escapeJVMOptions(): List<String> =
+	application.applicationDefaultJvmArgs
 		.toList()
 		.map { if (it.startsWith("-D")) "\"$it\"" else it }
-}
 
 runtime {
-	addOptions("--strip-debug", "--compress", "zip-9", "--no-header-files", "--no-man-pages")
+	addOptions("--strip-debug", "--no-header-files", "--no-man-pages")
 	addModules(
 		"java.desktop",
 		"java.naming",
@@ -177,61 +202,138 @@ runtime {
 		"jdk.accessibility",
 	)
 	jpackage {
-		imageOptions = listOf("--icon", "$projectDir/src/main/resources/logos/jadx-logo.ico")
-		skipInstaller = true
-		targetPlatformName = "win"
+		val os = DefaultNativePlatform.getCurrentOperatingSystem()
+		if (os.isMacOsX) {
+			imageName = "jadx-gui"
+			val fileAssociations =
+				fileTree("$projectDir/dist/macos/jpackage-file-associations") { include("*.properties") }
+					.files
+					.sortedBy { it.name }
+					.flatMap { listOf("--file-associations", it.absolutePath) }
+			imageOptions =
+				listOf(
+					"--icon",
+					"$projectDir/dist/macos/jadx-logo.icns",
+					"--mac-package-identifier",
+					"io.github.skylot.jadx",
+				) + fileAssociations
+			// jpackage on macOS requires version as up to three integers separated by dots
+			appVersion = if (jadxVersion.matches(Regex("\\d+(\\.\\d+){0,2}"))) jadxVersion else "1.0.0"
+			installerType = "dmg"
+			installerName = "jadx-gui"
+			skipInstaller = false
+		} else if (os.isWindows) {
+			// WiX Toolset required
+			appVersion = if (jadxVersion.matches(Regex("\\d+(\\.\\d+){0,2}"))) jadxVersion else "0.0.0"
+			imageOptions = listOf("--icon", "$projectDir/dist/windows/jadx-logo.ico")
+			skipInstaller = false
+			installerType = "msi"
+			installerOptions =
+				listOf(
+					"--win-menu",
+					"--win-shortcut",
+					"--win-dir-chooser",
+					"--win-upgrade-uuid",
+					"3d479468-383f-49fc-b374-53f64559dd9b",
+				)
+		} else if (os.isLinux) {
+			appVersion = if (jadxVersion.matches(Regex("\\d+(\\.\\d+){0,2}"))) jadxVersion else "0.0.0"
+			// TODO: setup linux packages, need to include jadx cli
+		} else {
+			throw RuntimeException("Unexpected OS: $os")
+		}
 	}
 	launcher {
 		noConsole = true
 	}
 }
 
-val copyDistWin by tasks.registering(Copy::class) {
-	description = "Copy files for Windows bundle"
+val copyDistWin =
+	tasks.register<Copy>("copyDistWin") {
+		description = "Copy files for Windows bundle"
 
-	val libTask = tasks.getByName("shadowJar")
-	dependsOn(libTask)
-	from(libTask.outputs) {
-		include("*.jar")
-		into("lib")
+		val libTask = tasks.getByName("shadowJar")
+		dependsOn(libTask)
+		from(libTask.outputs) {
+			include("*.jar")
+			into("lib")
+		}
+		val exeTask = tasks.getByName("createExe")
+		dependsOn(exeTask)
+		from(exeTask.outputs) {
+			include("*.exe")
+		}
+		into(layout.buildDirectory.dir("jadx-gui-win"))
+		duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 	}
-	val exeTask = tasks.getByName("createExe")
-	dependsOn(exeTask)
-	from(exeTask.outputs) {
-		include("*.exe")
+
+val copyDistWinWithJre =
+	tasks.register<Copy>("copyDistWinWithJre") {
+		description = "Copy files for Windows with JRE bundle"
+
+		val jreTask = tasks.runtime.get()
+		dependsOn(jreTask)
+		from(jreTask.jreDir) {
+			include("**/*")
+			into("jre")
+		}
+		val libTask = tasks.getByName("shadowJar")
+		dependsOn(libTask)
+		from(libTask.outputs) {
+			include("*.jar")
+			into("lib")
+		}
+		val exeTask = tasks.getByName("createExe")
+		dependsOn(exeTask)
+		from(exeTask.outputs) {
+			include("*.exe")
+		}
+		into(layout.buildDirectory.dir("jadx-gui-with-jre-win"))
+		duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 	}
-	into(layout.buildDirectory.dir("jadx-gui-win"))
-	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+val copyDistMac =
+	tasks.register<Copy>("copyDistMac") {
+		description = "Copy dmg file for macOS bundle"
+
+		val jpackageTask = tasks.getByName("jpackage")
+		dependsOn(jpackageTask)
+		from(layout.buildDirectory.dir("jpackage")) {
+			include("*.dmg")
+		}
+		rename(
+			"(.*)\\.dmg",
+			"jadx-gui-$jadxVersion-mac-${System.getProperty("os.arch")}.dmg",
+		)
+		into(layout.buildDirectory.dir("jadx-gui-mac"))
+	}
+
+/**
+ * Register and expose distribution artifacts to use in top level packaging tasks
+ */
+val distWinConfiguration =
+	configurations.create("distWinConfiguration") {
+		isCanBeResolved = false
+	}
+val distWinWithJreConfiguration =
+	configurations.create("distWinWithJreConfiguration") {
+		isCanBeResolved = false
+	}
+val distMacConfiguration =
+	configurations.create("distMacConfiguration") {
+		isCanBeResolved = false
+	}
+artifacts {
+	add(distWinConfiguration.name, copyDistWin)
+	add(distWinWithJreConfiguration.name, copyDistWinWithJre)
+	add(distMacConfiguration.name, copyDistMac)
 }
 
-val copyDistWinWithJre by tasks.registering(Copy::class) {
-	description = "Copy files for Windows with JRE bundle"
+val syncNLSLines =
+	tasks.register<JavaExec>("syncNLSLines") {
+		group = "jadx-dev"
+		description = "Utility task to sync new/missing translation using EN as a reference"
 
-	val jreTask = tasks.runtime.get()
-	dependsOn(jreTask)
-	from(jreTask.jreDir) {
-		include("**/*")
-		into("jre")
+		classpath = sourceSets.main.get().runtimeClasspath
+		mainClass.set("jadx.gui.utils.tools.SyncNLSLines")
 	}
-	val libTask = tasks.getByName("shadowJar")
-	dependsOn(libTask)
-	from(libTask.outputs) {
-		include("*.jar")
-		into("lib")
-	}
-	val exeTask = tasks.getByName("createExe")
-	dependsOn(exeTask)
-	from(exeTask.outputs) {
-		include("*.exe")
-	}
-	into(layout.buildDirectory.dir("jadx-gui-with-jre-win"))
-	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-}
-
-val syncNLSLines by tasks.registering(JavaExec::class) {
-	group = "jadx-dev"
-	description = "Utility task to sync new/missing translation using EN as a reference"
-
-	classpath = sourceSets.main.get().runtimeClasspath
-	mainClass.set("jadx.gui.utils.tools.SyncNLSLines")
-}

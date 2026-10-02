@@ -177,7 +177,7 @@ public class CacheManager {
 	}
 
 	private static String buildProjectUniqName(JadxProject project) {
-		return project.getName() + "-" + FileUtils.buildInputsHash(project.getFilePaths());
+		return project.getName() + '-' + project.getInputsHash();
 	}
 
 	public static String pathToString(Path path) {

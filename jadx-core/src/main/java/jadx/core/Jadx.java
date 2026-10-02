@@ -1,11 +1,7 @@
 package jadx.core;
 
-import java.io.InputStream;
-import java.net.URL;
 import java.util.ArrayList;
-import java.util.Enumeration;
 import java.util.List;
-import java.util.jar.Manifest;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +11,7 @@ import jadx.api.JadxArgs;
 import jadx.core.deobf.DeobfuscatorVisitor;
 import jadx.core.deobf.SaveDeobfMapping;
 import jadx.core.dex.attributes.AFlag;
+import jadx.core.dex.visitors.AdjustForIfMergeVisitor;
 import jadx.core.dex.visitors.AnonymousClassVisitor;
 import jadx.core.dex.visitors.ApplyVariableNames;
 import jadx.core.dex.visitors.AttachCommentsVisitor;
@@ -66,6 +63,7 @@ import jadx.core.dex.visitors.regions.IfRegionVisitor;
 import jadx.core.dex.visitors.regions.LoopRegionVisitor;
 import jadx.core.dex.visitors.regions.RegionMakerVisitor;
 import jadx.core.dex.visitors.regions.ReturnVisitor;
+import jadx.core.dex.visitors.regions.SwitchBreakVisitor;
 import jadx.core.dex.visitors.regions.SwitchOverStringVisitor;
 import jadx.core.dex.visitors.regions.variables.ProcessVariables;
 import jadx.core.dex.visitors.rename.CodeRenameVisitor;
@@ -77,6 +75,7 @@ import jadx.core.dex.visitors.typeinference.FinishTypeInference;
 import jadx.core.dex.visitors.typeinference.FixTypesVisitor;
 import jadx.core.dex.visitors.typeinference.TypeInferenceVisitor;
 import jadx.core.dex.visitors.usage.UsageInfoVisitor;
+import jadx.core.utils.JadxBuildInfo;
 import jadx.core.utils.exceptions.JadxRuntimeException;
 
 public class Jadx {
@@ -155,6 +154,8 @@ public class Jadx {
 		passes.add(new FixTypesVisitor());
 		passes.add(new FinishTypeInference());
 
+		passes.add(new AdjustForIfMergeVisitor());
+
 		if (args.getUseKotlinMethodsForVarNames() != JadxArgs.UseKotlinMethodsForVarNames.DISABLE) {
 			passes.add(new ProcessKotlinInternals());
 		}
@@ -196,12 +197,14 @@ public class Jadx {
 		passes.add(new FixAccessModifiers());
 		passes.add(new ClassModifier());
 		passes.add(new LoopRegionVisitor());
+		passes.add(new SwitchBreakVisitor());
 
 		if (args.isInlineMethods()) {
 			passes.add(new MarkMethodsForInline());
 		}
 		passes.add(new ProcessVariables());
 		passes.add(new ApplyVariableNames());
+
 		passes.add(new PrepareForCodeGen());
 		if (args.isCfgOutput()) {
 			passes.add(DotGraphVisitor.dumpRegions());
@@ -262,37 +265,11 @@ public class Jadx {
 
 	public static final String VERSION_DEV = "dev";
 
-	private static String version;
-
 	public static String getVersion() {
-		if (version == null) {
-			version = searchJadxVersion();
-		}
-		return version;
+		return JadxBuildInfo.getJadxVersion();
 	}
 
 	public static boolean isDevVersion() {
 		return getVersion().equals(VERSION_DEV);
-	}
-
-	private static String searchJadxVersion() {
-		try {
-			ClassLoader classLoader = Jadx.class.getClassLoader();
-			if (classLoader != null) {
-				Enumeration<URL> resources = classLoader.getResources("META-INF/MANIFEST.MF");
-				while (resources.hasMoreElements()) {
-					try (InputStream is = resources.nextElement().openStream()) {
-						Manifest manifest = new Manifest(is);
-						String ver = manifest.getMainAttributes().getValue("jadx-version");
-						if (ver != null) {
-							return ver;
-						}
-					}
-				}
-			}
-		} catch (Exception e) {
-			LOG.error("Can't get manifest file", e);
-		}
-		return VERSION_DEV;
 	}
 }

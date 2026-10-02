@@ -32,15 +32,16 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Timer;
 import java.util.TimerTask;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import javax.swing.AbstractAction;
 import javax.swing.Action;
+import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.JCheckBox;
 import javax.swing.JCheckBoxMenuItem;
-import javax.swing.JFileChooser;
+import javax.swing.JComponent;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JMenu;
@@ -50,17 +51,19 @@ import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
+import javax.swing.JTextField;
 import javax.swing.JToggleButton;
 import javax.swing.JToolBar;
 import javax.swing.JTree;
+import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 import javax.swing.ToolTipManager;
+import javax.swing.UIManager;
 import javax.swing.WindowConstants;
 import javax.swing.event.TreeExpansionEvent;
 import javax.swing.event.TreeWillExpandListener;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeCellRenderer;
-import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
@@ -71,15 +74,22 @@ import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.formdev.flatlaf.FlatClientProperties;
+import com.formdev.flatlaf.FlatLaf;
 import com.formdev.flatlaf.extras.FlatInspector;
 import com.formdev.flatlaf.extras.FlatUIDefaultsInspector;
+import com.formdev.flatlaf.util.UIScale;
 
 import ch.qos.logback.classic.Level;
+import hu.akarnokd.rxjava3.swing.SwingSchedulers;
+import io.reactivex.rxjava3.disposables.Disposable;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 
 import jadx.api.JadxArgs;
 import jadx.api.JavaClass;
 import jadx.api.JavaNode;
 import jadx.api.ResourceFile;
+import jadx.api.gui.IMainWindow;
 import jadx.api.plugins.events.JadxEvents;
 import jadx.api.plugins.events.types.ReloadProject;
 import jadx.api.plugins.events.types.ReloadSettingsWindow;
@@ -89,7 +99,6 @@ import jadx.core.Jadx;
 import jadx.core.dex.nodes.ClassNode;
 import jadx.core.dex.nodes.FieldNode;
 import jadx.core.dex.nodes.MethodNode;
-import jadx.core.export.TemplateFile;
 import jadx.core.utils.ListUtils;
 import jadx.core.utils.StringUtils;
 import jadx.core.utils.android.AndroidManifestParser;
@@ -111,24 +120,24 @@ import jadx.gui.jobs.TaskWithExtraOnFinish;
 import jadx.gui.logs.LogCollector;
 import jadx.gui.logs.LogOptions;
 import jadx.gui.logs.LogPanel;
-import jadx.gui.plugins.context.CommonGuiPluginsContext;
+import jadx.gui.plugins.GuiPluginsManager;
 import jadx.gui.plugins.context.TreePopupMenuEntry;
 import jadx.gui.plugins.mappings.RenameMappingsGui;
 import jadx.gui.plugins.quark.QuarkDialog;
+import jadx.gui.report.ExceptionDialog;
+import jadx.gui.report.JadxExceptionHandler;
 import jadx.gui.settings.JadxProject;
 import jadx.gui.settings.JadxSettings;
+import jadx.gui.settings.data.SaveOptionEnum;
 import jadx.gui.settings.ui.JadxSettingsWindow;
 import jadx.gui.tree.TreeExpansionService;
 import jadx.gui.treemodel.ApkSignatureNode;
-import jadx.gui.treemodel.JInputFiles;
-import jadx.gui.treemodel.JInputScripts;
-import jadx.gui.treemodel.JInputs;
+import jadx.gui.treemodel.JClass;
 import jadx.gui.treemodel.JLoadableNode;
 import jadx.gui.treemodel.JNode;
 import jadx.gui.treemodel.JPackage;
 import jadx.gui.treemodel.JResource;
 import jadx.gui.treemodel.JRoot;
-import jadx.gui.treemodel.JSources;
 import jadx.gui.ui.action.ActionModel;
 import jadx.gui.ui.action.JadxGuiAction;
 import jadx.gui.ui.codearea.AbstractCodeArea;
@@ -138,7 +147,6 @@ import jadx.gui.ui.codearea.theme.EditorThemeManager;
 import jadx.gui.ui.dialog.ADBDialog;
 import jadx.gui.ui.dialog.AboutDialog;
 import jadx.gui.ui.dialog.CharsetDialog;
-import jadx.gui.ui.dialog.ExceptionDialog;
 import jadx.gui.ui.dialog.GotoAddressDialog;
 import jadx.gui.ui.dialog.LogViewerDialog;
 import jadx.gui.ui.dialog.SearchDialog;
@@ -173,15 +181,17 @@ import jadx.gui.utils.Icons;
 import jadx.gui.utils.LafManager;
 import jadx.gui.utils.Link;
 import jadx.gui.utils.NLS;
+import jadx.gui.utils.TextStandardActions;
 import jadx.gui.utils.UiUtils;
 import jadx.gui.utils.dbg.UIWatchDog;
 import jadx.gui.utils.fileswatcher.LiveReloadWorker;
+import jadx.gui.utils.rx.RxUtils;
 import jadx.gui.utils.shortcut.ShortcutsController;
 import jadx.gui.utils.ui.ActionHandler;
 import jadx.gui.utils.ui.FileOpenerHelper;
 import jadx.gui.utils.ui.NodeLabel;
 
-public class MainWindow extends JFrame {
+public class MainWindow extends JFrame implements IMainWindow {
 	private static final Logger LOG = LoggerFactory.getLogger(MainWindow.class);
 
 	private static final String DEFAULT_TITLE = "jadx-gui";
@@ -215,7 +225,7 @@ public class MainWindow extends JFrame {
 	private transient JSplitPane quickTabsAndCodeSplitPane;
 
 	private JTree tree;
-	private DefaultTreeModel treeModel;
+	private FilterableTreeModel treeModel;
 	private JRoot treeRoot;
 	private TabbedPane tabbedPane;
 	private HeapUsageBar heapUsageBar;
@@ -251,11 +261,16 @@ public class MainWindow extends JFrame {
 	public JMenu hexViewerMenu;
 
 	private final transient RenameMappingsGui renameMappings;
+	private final transient GuiPluginsManager guiPluginsManager;
+	private JTextField treeFilterField;
+	private Disposable treeFilterDisposable;
+	private Disposable treeScrollDisposable;
 
 	public MainWindow(JadxSettings settings) {
 		this.settings = settings;
 		this.project = new JadxProject(this);
 		this.wrapper = new JadxWrapper(this);
+		this.guiPluginsManager = new GuiPluginsManager(this);
 		this.cacheObject = new CacheObject(wrapper);
 		this.liveReloadWorker = new LiveReloadWorker(this);
 		this.renameMappings = new RenameMappingsGui(this);
@@ -266,9 +281,8 @@ public class MainWindow extends JFrame {
 		this.editorThemeManager = new EditorThemeManager(settings);
 
 		JadxEventQueue.register();
+		JadxExceptionHandler.register(this);
 		resetCache();
-		FontUtils.registerBundledFonts();
-		editorThemeManager.setTheme(settings.getEditorTheme());
 		initUI();
 		this.editorSyncManager = new EditorSyncManager(this, tabbedPane);
 		this.backgroundExecutor = new BackgroundExecutor(settings, progressPane);
@@ -289,14 +303,7 @@ public class MainWindow extends JFrame {
 		treeSplitPane.setDividerLocation(settings.getTreeWidth());
 		heapUsageBar.setVisible(settings.isShowHeapUsageBar());
 		setVisible(true);
-		setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
-		addWindowListener(new WindowAdapter() {
-			@Override
-			public void windowClosing(WindowEvent e) {
-				closeWindow();
-			}
-		});
-
+		UiUtils.bgRun(guiPluginsManager::load);
 		processCommandLineArgs();
 	}
 
@@ -381,8 +388,10 @@ public class MainWindow extends JFrame {
 		if (!ensureProjectIsSaved()) {
 			return;
 		}
-		closeAll();
-		updateProject(new JadxProject(this));
+		UiUtils.bgRun(() -> {
+			closeAll();
+			updateProject(new JadxProject(this));
+		});
 	}
 
 	private void saveProject() {
@@ -424,30 +433,6 @@ public class MainWindow extends JFrame {
 		project.saveAs(savePath);
 		settings.addRecentProject(savePath);
 		update();
-	}
-
-	public void addNewScript() {
-		FileDialogWrapper fileDialog = new FileDialogWrapper(this, FileOpenMode.CUSTOM_SAVE);
-		fileDialog.setTitle(NLS.str("file.save"));
-		Path workingDir = project.getWorkingDir();
-		Path baseDir = workingDir != null ? workingDir : settings.getLastSaveFilePath();
-		fileDialog.setSelectedFile(baseDir.resolve("script.jadx.kts"));
-		fileDialog.setFileExtList(Collections.singletonList("jadx.kts"));
-		fileDialog.setSelectionMode(JFileChooser.FILES_ONLY);
-		List<Path> paths = fileDialog.show();
-		if (paths.size() != 1) {
-			return;
-		}
-		Path scriptFile = paths.get(0);
-		try {
-			TemplateFile tmpl = TemplateFile.fromResources("/files/script.jadx.kts.tmpl");
-			FileUtils.writeFile(scriptFile, tmpl.build());
-		} catch (Exception e) {
-			LOG.error("Failed to save new script file: {}", scriptFile, e);
-		}
-		List<Path> inputs = project.getFilePaths();
-		inputs.add(scriptFile);
-		refreshTree(inputs);
 	}
 
 	public void removeInput(Path file) {
@@ -503,15 +488,17 @@ public class MainWindow extends JFrame {
 
 	private void open(List<Path> paths, Runnable onFinish) {
 		saveAll();
-		closeAll();
-		if (paths.size() == 1 && openSingleFile(paths.get(0), onFinish)) {
-			return;
-		}
-		// start new project
-		project = new JadxProject(this);
-		project.setFilePaths(paths);
-		showUndisplayedCharsDialog = false;
-		loadFiles(onFinish);
+		UiUtils.bgRun(() -> {
+			closeAll();
+			if (paths.size() == 1 && openSingleFile(paths.get(0), onFinish)) {
+				return;
+			}
+			// start new project
+			project = new JadxProject(this);
+			project.setFilePaths(paths);
+			showUndisplayedCharsDialog = false;
+			loadFiles(onFinish);
+		});
 	}
 
 	private boolean openSingleFile(Path singleFile, Runnable onFinish) {
@@ -537,6 +524,10 @@ public class MainWindow extends JFrame {
 		return loadedFile.resolveSibling(fileName);
 	}
 
+	public void reloadMenuShortcuts() {
+		menuBar.reloadShortcuts();
+	}
+
 	public void reopen() {
 		LOG.debug("starting reopen");
 		UiUtils.bgRun(() -> {
@@ -544,8 +535,9 @@ public class MainWindow extends JFrame {
 			synchronized (ReloadProject.EVENT) {
 				saveAll();
 				closeAll();
+				System.gc();
 				loadFiles(() -> {
-					menuBar.reloadShortcuts();
+					reloadMenuShortcuts();
 					events().send(ReloadSettingsWindow.INSTANCE);
 					LOG.debug("reopen complete");
 				});
@@ -555,45 +547,28 @@ public class MainWindow extends JFrame {
 
 	private void openProject(Path path, Runnable onFinish) {
 		LOG.debug("Loading project: {}", path);
-		JadxProject jadxProject = JadxProject.load(this, path);
-		if (jadxProject == null) {
-			JOptionPane.showMessageDialog(
-					this,
-					NLS.str("msg.project_error"),
-					NLS.str("msg.project_error_title"),
-					JOptionPane.INFORMATION_MESSAGE);
-			jadxProject = new JadxProject(this);
-		}
+		project = JadxProject.load(this, path);
 		settings.addRecentProject(path);
-		project = jadxProject;
 		loadFiles(onFinish);
 	}
 
 	private void loadFiles(Runnable onFinish) {
+		project.verifyFiles();
 		if (project.getFilePaths().isEmpty()) {
 			tabsController.selectTab(new StartPageNode());
 			onFinish.run();
 			return;
 		}
-		AtomicReference<Exception> wrapperException = new AtomicReference<>();
 		backgroundExecutor.execute(NLS.str("progress.load"),
 				() -> {
 					try {
 						wrapper.open();
 					} catch (Exception e) {
-						wrapperException.set(e);
+						LOG.error("Project load error", e);
+						closeAll();
 					}
 				},
 				status -> {
-					if (wrapperException.get() != null) {
-						closeAll();
-						Exception e = wrapperException.get();
-						if (e instanceof RuntimeException) {
-							throw (RuntimeException) e;
-						} else {
-							throw new JadxRuntimeException("Project load error", e);
-						}
-					}
 					if (status == TaskStatus.CANCEL_BY_MEMORY) {
 						showHeapUsageBar();
 						UiUtils.errorMessage(this, NLS.str("message.memoryLow"));
@@ -604,8 +579,7 @@ public class MainWindow extends JFrame {
 						return;
 					}
 					checkLoadedStatus();
-					onOpen();
-					onFinish.run();
+					onOpen(onFinish);
 				});
 	}
 
@@ -616,19 +590,21 @@ public class MainWindow extends JFrame {
 	}
 
 	private void closeAll() {
-		notifyLoadListeners(false);
+		UiUtils.notUiThreadGuard();
 		cancelBackgroundJobs();
-		navController.reset();
-		tabbedPane.reset();
-		clearTree();
-		resetCache();
-		LogCollector.getInstance().reset();
+		UiUtils.uiRunAndWait(() -> {
+			tabsController.forceCloseAllTabs();
+			tabbedPane.reset();
+			navController.reset();
+			shortcutsController.reset();
+			clearTree();
+			UiUtils.resetClipboardOwner();
+			update();
+		});
 		wrapper.close();
-		tabsController.forceCloseAllTabs();
-		shortcutsController.reset();
-		UiUtils.resetClipboardOwner();
-		System.gc();
-		UiUtils.uiRun(this::update);
+		LogCollector.getInstance().reset();
+		resetCache();
+		notifyLoadListeners(false);
 	}
 
 	private void checkLoadedStatus() {
@@ -651,26 +627,43 @@ public class MainWindow extends JFrame {
 		}
 	}
 
-	private void onOpen() {
+	private void onOpen(Runnable onFinish) {
 		initTree();
 		updateLiveReload(project.isEnableLiveReload());
 		BreakpointManager.init(project.getFilePaths().get(0).toAbsolutePath().getParent());
-		treeExpansionService.load(project.getTreeExpansions());
 		List<EditorViewState> openTabs = project.getOpenTabs(this);
-		backgroundExecutor.execute(NLS.str("progress.load"),
+		backgroundExecutor.startLoading(
 				() -> preLoadOpenTabs(openTabs),
-				status -> {
+				() -> {
 					restoreOpenTabs(openTabs);
-					runInitialBackgroundJobs();
-					notifyLoadListeners(true);
 					update();
+					notifyLoadListeners(true);
+					onFinish.run();
 					checkIfCodeHasNonPrintableChars();
+					runInitialBackgroundJobs();
+					prepareInitialView();
 				});
+		// queue tree state restore after loading task
+		treeExpansionService.load(project.getTreeExpansions());
+	}
+
+	private void prepareInitialView() {
+		UiUtils.uiThreadGuard();
+		// open single class
+		wrapper.getCurrentDecompiler().ifPresent(decompiler -> {
+			List<JavaClass> classes = decompiler.getClasses();
+			if (classes.size() == 1) {
+				JClass singleCls = cacheObject.getNodeCache().makeFrom(classes.get(0));
+				tabsController.codeJump(singleCls, true);
+				selectNodeInTree(singleCls);
+			}
+		});
 	}
 
 	public void passesReloaded() {
+		UiUtils.uiThreadGuard();
 		tabbedPane.reloadInactiveTabs();
-		reloadTree();
+		reloadTreePreservingState();
 	}
 
 	private void initEvents() {
@@ -707,10 +700,10 @@ public class MainWindow extends JFrame {
 			return true;
 		}
 		// Check if we saved settings that indicate what to do
-		if (settings.getSaveOption() == JadxSettings.SAVEOPTION.NEVER) {
+		if (settings.getSaveOption() == SaveOptionEnum.NEVER) {
 			return true;
 		}
-		if (settings.getSaveOption() == JadxSettings.SAVEOPTION.ALWAYS) {
+		if (settings.getSaveOption() == SaveOptionEnum.ALWAYS) {
 			saveProject();
 			return true;
 		}
@@ -730,7 +723,7 @@ public class MainWindow extends JFrame {
 		switch (res) {
 			case JOptionPane.YES_OPTION:
 				if (remember.isSelected()) {
-					settings.setSaveOption(JadxSettings.SAVEOPTION.ALWAYS);
+					settings.setSaveOption(SaveOptionEnum.ALWAYS);
 					settings.sync();
 				}
 				saveProject();
@@ -738,7 +731,7 @@ public class MainWindow extends JFrame {
 
 			case JOptionPane.NO_OPTION:
 				if (remember.isSelected()) {
-					settings.setSaveOption(JadxSettings.SAVEOPTION.NEVER);
+					settings.setSaveOption(SaveOptionEnum.NEVER);
 					settings.sync();
 				}
 				return true;
@@ -838,9 +831,10 @@ public class MainWindow extends JFrame {
 	}
 
 	public void initTree() {
-		treeRoot = new JRoot(wrapper);
+		treeRoot = new JRoot(this);
 		treeRoot.setFlatPackages(isFlattenPackage);
 		treeModel.setRoot(treeRoot);
+		treeFilterField.setText("");
 		addTreeCustomNodes();
 		treeRoot.update();
 		reloadTree();
@@ -863,8 +857,10 @@ public class MainWindow extends JFrame {
 		treeRoot.update();
 	}
 
-	// simple save and restore tree state after renaming
-	// maybe need improve for find and update only changed node
+	/**
+	 * Simple save and restore tree state after renaming.
+	 * TODO: maybe need improve for find and update only changed node
+	 */
 	public void reloadTreePreservingState() {
 		List<String> treePath = treeExpansionService.save();
 		reloadTree();
@@ -920,11 +916,7 @@ public class MainWindow extends JFrame {
 				}
 			} else if (obj instanceof JNode) {
 				JNode treeNode = (JNode) obj;
-				if (!(treeNode instanceof JPackage)
-						&& !(treeNode instanceof JSources)
-						&& !(treeNode instanceof JInputs)
-						&& !(treeNode instanceof JInputFiles)
-						&& !(treeNode instanceof JInputScripts)) {
+				if (treeNode.hasContent() || treeNode.getJParent() != null) {
 					tabsController.codeJump(treeNode, true);
 					return true;
 				}
@@ -941,8 +933,7 @@ public class MainWindow extends JFrame {
 			return;
 		}
 		JPopupMenu menu = node.onTreePopupMenu(this);
-		CommonGuiPluginsContext pluginsContext = getWrapper().getGuiPluginsContext();
-		for (TreePopupMenuEntry entry : pluginsContext.getTreePopupMenuEntries()) {
+		for (TreePopupMenuEntry entry : guiPluginsManager.getPluginsContext().getTreePopupMenuEntries()) {
 			JMenuItem menuItem = entry.buildEntry(node);
 			if (menuItem != null) {
 				if (menu == null) {
@@ -1041,7 +1032,7 @@ public class MainWindow extends JFrame {
 		return null;
 	}
 
-	public void toggleHexViewMenu() {
+	public void updateHexViewMenuEnabled() {
 		hexViewerMenu.setEnabled(getCurrentHexViewTab() != null);
 	}
 
@@ -1174,12 +1165,12 @@ public class MainWindow extends JFrame {
 
 		JCheckBoxMenuItem dockLog = new JCheckBoxMenuItem(NLS.str("menu.dock_log"));
 		dockLog.setState(settings.isDockLogViewer());
-		dockLog.addActionListener(event -> settings.setDockLogViewer(!settings.isDockLogViewer()));
+		dockLog.addActionListener(event -> settings.saveDockLogViewer(!settings.isDockLogViewer()));
 
 		ActionHandler quickTabsAction = new ActionHandler(ev -> {
 			boolean visible = quickTabsTree == null;
 			setQuickTabsVisibility(visible);
-			settings.setDockQuickTabs(visible);
+			settings.saveDockQuickTabs(visible);
 		});
 		quickTabsAction.setNameAndDesc(NLS.str("menu.dock_quick_tabs"));
 		quickTabsAction.setIcon(Icons.QUICK_TABS);
@@ -1400,9 +1391,12 @@ public class MainWindow extends JFrame {
 		mainPanel.add(treeSplitPane);
 
 		DefaultMutableTreeNode treeRootNode = new DefaultMutableTreeNode(NLS.str("msg.open_file"));
-		treeModel = new DefaultTreeModel(treeRootNode);
+
+		treeModel = new FilterableTreeModel(this, treeRootNode);
 		tree = new JTree(treeModel);
+		tree.setLargeModel(true);
 		ToolTipManager.sharedInstance().registerComponent(tree);
+
 		tree.getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
 		tree.setFocusable(false);
 		tree.addFocusListener(new FocusAdapter() {
@@ -1484,16 +1478,38 @@ public class MainWindow extends JFrame {
 		progressPane = new ProgressPanel(this, true);
 		issuesPanel = new IssuesPanel(this);
 
+		treeFilterField = new JTextField();
+		TextStandardActions.attach(treeFilterField);
+		treeFilterField.setToolTipText(NLS.str("tree.filter"));
+		treeFilterField.putClientProperty(FlatClientProperties.TEXT_FIELD_SHOW_CLEAR_BUTTON, true);
+		treeFilterField.putClientProperty(FlatClientProperties.PLACEHOLDER_TEXT, NLS.str("tree.filter"));
+		treeFilterField.registerKeyboardAction(ev -> treeFilterField.setText(""),
+				KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_FOCUSED);
+
+		treeFilterDisposable = RxUtils.textFieldChanges(treeFilterField)
+				.debounce(300, TimeUnit.MILLISECONDS)
+				.observeOn(Schedulers.newThread())
+				.subscribe(t -> treeModel.setFilter(treeFilterField.getText()));
+
+		JPanel filterPanel = new JPanel(new BorderLayout());
+		filterPanel.setBorder(BorderFactory.createEmptyBorder(5, 2, 2, 2));
+		filterPanel.add(treeFilterField, BorderLayout.CENTER);
+
 		JPanel leftPane = new JPanel(new BorderLayout());
 		JScrollPane treeScrollPane = new JScrollPane(tree);
 		treeScrollPane.setMinimumSize(new Dimension(100, 150));
+		treeScrollDisposable = RxUtils.scrollBarEvents(treeScrollPane.getVerticalScrollBar())
+				.observeOn(SwingSchedulers.edt())
+				.subscribe(v -> treeModel.expandVisibleFilteredNodes(tree));
 
 		JPanel bottomPane = new JPanel(new BorderLayout());
 		bottomPane.add(issuesPanel, BorderLayout.PAGE_START);
 		bottomPane.add(progressPane, BorderLayout.PAGE_END);
 
+		leftPane.add(filterPanel, BorderLayout.PAGE_START);
 		leftPane.add(treeScrollPane, BorderLayout.CENTER);
 		leftPane.add(bottomPane, BorderLayout.PAGE_END);
+
 		treeSplitPane.setLeftComponent(leftPane);
 
 		tabbedPane = new TabbedPane(this, tabsController);
@@ -1528,6 +1544,14 @@ public class MainWindow extends JFrame {
 			FlatInspector.install("ctrl shift alt X");
 			FlatUIDefaultsInspector.install("ctrl shift alt Y");
 		}
+
+		setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
+		addWindowListener(new WindowAdapter() {
+			@Override
+			public void windowClosing(WindowEvent e) {
+				closeWindow();
+			}
+		});
 	}
 
 	public void setLocationAndPosition() {
@@ -1574,14 +1598,23 @@ public class MainWindow extends JFrame {
 	}
 
 	private void updateUiSettings() {
-		LafManager.updateLaf(settings);
+		boolean needUpdateUI = false;
+		Font defaultUiFont = UIManager.getFont("defaultFont");
+		Font uiFont = settings.getUiFont();
+		if (!uiFont.equals(defaultUiFont)) {
+			UIManager.put("defaultFont", uiFont);
+			setFont(uiFont);
+			needUpdateUI = true;
+		}
+		if (LafManager.updateLaf(settings)) {
+			needUpdateUI = true;
+		}
 		editorThemeManager.setTheme(settings.getEditorTheme());
 
-		Font font = settings.getFont();
-		Font largerFont = font.deriveFont(font.getSize() + 2.f);
-
-		setFont(largerFont);
-		tree.setFont(largerFont);
+		if (UIScale.setZoomFactor(settings.getUiZoom())) {
+			needUpdateUI = true;
+		}
+		tree.setFont(settings.getCodeFont());
 		tree.setRowHeight(-1);
 
 		tabbedPane.loadSettings();
@@ -1591,27 +1624,47 @@ public class MainWindow extends JFrame {
 		if (quickTabsTree != null) {
 			quickTabsTree.loadSettings();
 		}
-
 		shortcutsController.loadSettings();
+		if (needUpdateUI) {
+			FlatLaf.updateUI();
+		}
 	}
 
+	@SuppressWarnings("finally")
 	private void closeWindow() {
 		saveAll();
 		if (!ensureProjectIsSaved()) {
 			return;
 		}
-		settings.setTreeWidth(treeSplitPane.getDividerLocation());
-		settings.saveWindowPos(this);
-		settings.setMainWindowExtendedState(getExtendedState());
-		if (debuggerPanel != null) {
-			saveSplittersInfo();
-		}
-		heapUsageBar.reset();
-		closeAll();
+		UiUtils.bgRun(() -> {
+			try {
+				settings.setTreeWidth(treeSplitPane.getDividerLocation());
+				settings.saveWindowPos(this);
+				settings.setMainWindowExtendedState(getExtendedState());
+				if (debuggerPanel != null) {
+					saveSplittersInfo();
+				}
+				// block UI thread to avoid settings data changes during sync
+				UiUtils.uiRunAndWait(settings::sync);
 
-		editorThemeManager.unload();
-		dispose();
-		System.exit(0);
+				closeAll();
+				guiPluginsManager.runGlobalUnload();
+				UiUtils.uiRunAndWait(() -> {
+					try {
+						heapUsageBar.reset();
+						editorThemeManager.unload();
+						treeFilterDisposable.dispose();
+						treeScrollDisposable.dispose();
+					} finally {
+						dispose();
+					}
+				});
+			} catch (Exception e) {
+				LOG.error("Close window error", e);
+			} finally {
+				System.exit(0);
+			}
+		});
 	}
 
 	private void saveOpenTabs() {
@@ -1687,6 +1740,10 @@ public class MainWindow extends JFrame {
 		return navController;
 	}
 
+	public GuiPluginsManager getGuiPluginsManager() {
+		return guiPluginsManager;
+	}
+
 	public JadxSettings getSettings() {
 		return settings;
 	}
@@ -1699,8 +1756,16 @@ public class MainWindow extends JFrame {
 		return backgroundExecutor;
 	}
 
+	public JTree getTree() {
+		return tree;
+	}
+
 	public JRoot getTreeRoot() {
 		return treeRoot;
+	}
+
+	public JTextField getTreeFilterField() {
+		return treeFilterField;
 	}
 
 	public JDebuggerPanel getDebuggerPanel() {
@@ -1759,7 +1824,7 @@ public class MainWindow extends JFrame {
 		}
 		Runnable undock = () -> {
 			hideDockedLog();
-			settings.setDockLogViewer(false);
+			settings.saveDockLogViewer(false);
 			LogViewerDialog.open(this, logOptions);
 		};
 		logPanel = new LogPanel(this, logOptions, undock, this::hideDockedLog);
@@ -1833,7 +1898,7 @@ public class MainWindow extends JFrame {
 		StringBuilder nonDisplayString = new StringBuilder();
 
 		List<ClassNode> classes = wrapper.getRootNode().getClasses(true);
-		Font font = getSettings().getFont();
+		Font font = getSettings().getCodeFont();
 		boolean hasNonDisplayable = false;
 
 		for (ClassNode cls : classes) {

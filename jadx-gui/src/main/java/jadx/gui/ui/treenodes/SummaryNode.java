@@ -59,7 +59,7 @@ public class SummaryNode extends JNode {
 		} catch (Exception e) {
 			builder.append("Error build summary: ");
 			builder.append("<pre>");
-			builder.append(Utils.getStackTrace(e));
+			builder.escape(Utils.getStackTrace(e));
 			builder.append("</pre>");
 		}
 		return new SimpleCodeInfo(builder.toString());
@@ -128,20 +128,24 @@ public class SummaryNode extends JNode {
 				if (count >= 2) {
 					String arch = parts[count - 2];
 					String name = parts[count - 1];
-					libsByArch.computeIfAbsent(arch, (a) -> new HashSet<>())
+					libsByArch.computeIfAbsent(arch, a -> new HashSet<>())
 							.add(name);
 				}
 			}
 			String arches = libsByArch.keySet().stream()
 					.sorted(Comparator.naturalOrder())
 					.collect(Collectors.joining(", "));
-			builder.append("<li>Arch list: " + arches + "</li>");
+			builder.append("<li>Arch list: ");
+			builder.escape(arches);
+			builder.append("</li>");
 
 			String perArchCount = libsByArch.entrySet().stream()
 					.map(entry -> entry.getKey() + ":" + entry.getValue().size())
 					.sorted(Comparator.naturalOrder())
 					.collect(Collectors.joining(", "));
-			builder.append("<li>Per arch count: " + perArchCount + "</li>");
+			builder.append("<li>Per arch count: ");
+			builder.escape(perArchCount);
+			builder.append("</li>");
 
 			builder.append("<br>");
 			builder.append("<li>Total count: " + nativeLibs.size() + "</li>");
@@ -191,7 +195,12 @@ public class SummaryNode extends JNode {
 	}
 
 	private String valueAndPercent(long value, int total) {
-		return String.format("%d (%.2f%%)", value, value * 100 / ((double) total));
+		return String.format("%d (%.2f%%)", value, value * 100 / (double) total);
+	}
+
+	@Override
+	public boolean hasContent() {
+		return true;
 	}
 
 	@Override

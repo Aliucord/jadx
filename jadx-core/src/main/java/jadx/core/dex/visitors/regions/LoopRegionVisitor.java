@@ -53,10 +53,7 @@ public class LoopRegionVisitor extends AbstractVisitor implements IRegionVisitor
 	@Override
 	public void visit(MethodNode mth) {
 		DepthRegionTraversal.traverse(mth, this);
-		if (mth.contains(AFlag.REQUEST_IF_REGION_OPTIMIZE)) {
-			IfRegionVisitor.process(mth);
-			mth.remove(AFlag.REQUEST_IF_REGION_OPTIMIZE);
-		}
+		IfRegionVisitor.processIfRequested(mth);
 	}
 
 	@Override
@@ -396,7 +393,7 @@ public class LoopRegionVisitor extends AbstractVisitor implements IRegionVisitor
 		if (insn.getType() == InsnType.INVOKE) {
 			InvokeNode inv = (InvokeNode) insn;
 			MethodInfo callMth = inv.getCallMth();
-			if (inv.getInvokeType() == InvokeType.INTERFACE
+			if ((inv.getInvokeType() == InvokeType.INTERFACE || inv.getInvokeType() == InvokeType.VIRTUAL)
 					&& callMth.getShortId().equals(mthId)) {
 				if (declClsFullName == null) {
 					return true;

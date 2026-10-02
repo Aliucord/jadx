@@ -6,8 +6,14 @@ plugins {
 dependencies {
 	api(project(":jadx-core"))
 
-	testImplementation(project.project(":jadx-core").sourceSets.getByName("test").output)
-	testImplementation("org.apache.commons:commons-lang3:3.18.0")
+	testImplementation(
+		project
+			.project(":jadx-core")
+			.sourceSets
+			.getByName("test")
+			.output,
+	)
+	testImplementation(libs.commons.lang3)
 
 	testRuntimeOnly(project(":jadx-plugins:jadx-smali-input"))
 }

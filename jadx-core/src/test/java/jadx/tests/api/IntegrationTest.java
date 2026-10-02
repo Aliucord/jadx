@@ -7,6 +7,7 @@ import java.io.InputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -124,7 +125,7 @@ public abstract class IntegrationTest extends TestUtils {
 
 	/**
 	 * Run check method on decompiled code even if source check method not found.
-	 * Useful for smali test if check method added to smali code
+	 * Useful for Smali tests if check method added into Smali code
 	 */
 	private boolean forceDecompiledCheck = false;
 
@@ -220,8 +221,7 @@ public abstract class IntegrationTest extends TestUtils {
 		} else {
 			LOG.info("Convert back to top level: {}", cls);
 			cls.getTopParentClass().decompile(); // keep correct process order
-			cls.getClassInfo().notInner(root);
-			cls.updateParentClass();
+			cls.notInner();
 		}
 		decompileAndCheck(cls);
 		return cls;
@@ -263,7 +263,7 @@ public abstract class IntegrationTest extends TestUtils {
 	protected JadxDecompiler loadFiles(List<File> inputFiles) {
 		args.setInputFiles(inputFiles);
 		boolean useDx = !isJavaInput();
-		LOG.info(useDx ? "Using dex input" : "Using java input");
+		LOG.info(useDx ? "Using dex input" : "Using java input, current java version: " + JavaUtils.JAVA_VERSION_INT);
 		args.setUseDxInput(useDx);
 
 		JadxDecompiler d = new JadxDecompiler(args);
@@ -743,5 +743,12 @@ public abstract class IntegrationTest extends TestUtils {
 		JavaVariable javaVariable = (JavaVariable) jadxDecompiler.getJavaNodeByCodeAnnotation(null, varNode);
 		assertThat(javaVariable).isNotNull();
 		return javaVariable;
+	}
+
+	public File getResourceFile(String filePath) {
+		URL resource = getClass().getClassLoader().getResource(filePath);
+		assertThat(resource).as("Resource not found: %s", filePath).isNotNull();
+		String resPath = resource.getFile();
+		return new File(resPath);
 	}
 }

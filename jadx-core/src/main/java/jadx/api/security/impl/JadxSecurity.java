@@ -3,6 +3,8 @@ package jadx.api.security.impl;
 import java.io.File;
 import java.io.InputStream;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import javax.xml.parsers.DocumentBuilderFactory;
 
@@ -12,7 +14,9 @@ import org.w3c.dom.Document;
 
 import jadx.api.security.IJadxSecurity;
 import jadx.api.security.JadxSecurityFlag;
+import jadx.api.security.SanitizeType;
 import jadx.core.deobf.NameMapper;
+import jadx.core.utils.exceptions.JadxRuntimeException;
 import jadx.zip.IZipEntry;
 import jadx.zip.security.DisabledZipSecurity;
 import jadx.zip.security.IJadxZipSecurity;
@@ -69,6 +73,30 @@ public class JadxSecurity implements IJadxSecurity {
 			return "INVALID_PACKAGE";
 		}
 		return appPackage;
+	}
+
+	@Override
+	public String sanitizeString(String str, SanitizeType type) {
+		if (!flags.contains(JadxSecurityFlag.SANITIZE_STRINGS)) {
+			return str;
+		}
+		switch (type) {
+			case GRADLE_GROOVY:
+			case GRADLE_KOTLIN:
+				// same patterns for now
+				return sanitizeGradle(str);
+		}
+		throw new JadxRuntimeException("Unsupported sanitize type: " + type);
+	}
+
+	private static final Pattern SANITIZE_GRADLE_PATTERN = Pattern.compile("[;'\"${}/:>?*|\\[\\]\\\\]");
+
+	private String sanitizeGradle(String str) {
+		Matcher matcher = SANITIZE_GRADLE_PATTERN.matcher(str);
+		if (matcher.find()) {
+			return matcher.replaceAll("");
+		}
+		return str;
 	}
 
 	@Override

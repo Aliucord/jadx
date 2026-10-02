@@ -23,6 +23,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import jadx.core.utils.exceptions.JadxRuntimeException;
+import jadx.gui.jobs.SilentTask;
 import jadx.gui.treemodel.JClass;
 import jadx.gui.treemodel.JNode;
 import jadx.gui.ui.MainWindow;
@@ -220,16 +221,17 @@ public class TabbedPane extends JTabbedPane implements ITabStatesListener {
 	}
 
 	private @Nullable ContentPanel showCode(JumpPosition jumpPos) {
+		UiUtils.uiThreadGuard();
 		JNode jumpNode = jumpPos.getNode();
-		ContentPanel contentPanel = getContentPanel(jumpNode);
+		ContentPanel contentPanel = getTabByNode(jumpNode);
 		if (contentPanel == null) {
 			return null;
 		}
 		selectTab(contentPanel);
 		int pos = jumpPos.getPos();
-		if (pos < 0) {
+		if (pos <= 0) {
 			LOG.warn("Invalid jump: {}", jumpPos, new JadxRuntimeException());
-			pos = 0;
+			pos = Math.max(0, jumpNode.getPos());
 		}
 		contentPanel.scrollToPos(pos);
 		return contentPanel;
@@ -314,9 +316,20 @@ public class TabbedPane extends JTabbedPane implements ITabStatesListener {
 		return (TabComponent) component;
 	}
 
-	private @Nullable ContentPanel getContentPanel(JNode node) {
-		controller.openTab(node);
-		return getTabByNode(node);
+	public boolean tabWithTitleExists(String tabTitle) {
+		try {
+			for (int i = 0; i < getTabCount(); i++) {
+				Component component = getTabComponentAt(i);
+				if (component instanceof TabComponent) {
+					if (((TabComponent) component).getTabTitle().equals(tabTitle)) {
+						return true;
+					}
+				}
+			}
+		} catch (Exception e) {
+			LOG.warn("Failed to check tabs titles", e);
+		}
+		return false;
 	}
 
 	public void refresh(JNode node) {
@@ -421,7 +434,7 @@ public class TabbedPane extends JTabbedPane implements ITabStatesListener {
 
 	@Override
 	public void onTabSelect(TabBlueprint blueprint) {
-		ContentPanel contentPanel = getContentPanel(blueprint.getNode());
+		ContentPanel contentPanel = getTabByNode(blueprint.getNode());
 		if (contentPanel != null) {
 			setSelectedComponent(contentPanel);
 		}
@@ -429,7 +442,10 @@ public class TabbedPane extends JTabbedPane implements ITabStatesListener {
 
 	@Override
 	public void onTabCodeJump(TabBlueprint blueprint, @Nullable JumpPosition prevPos, JumpPosition position) {
-		showCode(position);
+		// queue task to wait completion of loading tasks
+		mainWindow.getBackgroundExecutor().execute(new SilentTask(() -> {
+			UiUtils.uiRun(() -> showCode(position));
+		}));
 	}
 
 	@Override
@@ -458,6 +474,9 @@ public class TabbedPane extends JTabbedPane implements ITabStatesListener {
 				} else if (removalIdx == 0) { // select right tab
 					setSelectedIndex(removalIdx + 1);
 				}
+			} else {
+				// no other tabs => inform controller to reset selection
+				controller.deselectTab();
 			}
 		}
 

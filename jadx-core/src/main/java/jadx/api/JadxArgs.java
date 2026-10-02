@@ -4,12 +4,12 @@ import java.io.Closeable;
 import java.io.File;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -41,6 +41,7 @@ import jadx.core.deobf.conditions.DeobfWhitelist;
 import jadx.core.deobf.conditions.JadxRenameConditions;
 import jadx.core.export.ExportGradleType;
 import jadx.core.plugins.PluginContext;
+import jadx.core.plugins.PluginRuntime;
 import jadx.core.plugins.files.IJadxFilesGetter;
 import jadx.core.plugins.files.TempFilesGetter;
 import jadx.core.utils.files.FileUtils;
@@ -97,7 +98,7 @@ public class JadxArgs implements Closeable {
 	/**
 	 * Predicate that allows to filter the classes to be process based on their full name
 	 */
-	private Predicate<String> classFilter = null;
+	private @Nullable Predicate<String> classFilter = null;
 
 	/**
 	 * Save dependencies for classes accepted by {@code classFilter}
@@ -203,6 +204,11 @@ public class JadxArgs implements Closeable {
 	 */
 	private boolean runDebugChecks = false;
 
+	/**
+	 * Passes to exclude from processing.
+	 */
+	private final List<String> disabledPasses = new ArrayList<>();
+
 	private Map<String, String> pluginOptions = new HashMap<>();
 
 	private Set<String> disabledPlugins = new HashSet<>();
@@ -224,7 +230,6 @@ public class JadxArgs implements Closeable {
 	@Override
 	public void close() {
 		try {
-			inputFiles = null;
 			if (codeCache != null) {
 				codeCache.close();
 			}
@@ -236,9 +241,6 @@ public class JadxArgs implements Closeable {
 			}
 		} catch (Exception e) {
 			LOG.error("Failed to close JadxArgs", e);
-		} finally {
-			codeCache = null;
-			usageInfoCache = null;
 		}
 	}
 
@@ -246,8 +248,12 @@ public class JadxArgs implements Closeable {
 		return inputFiles;
 	}
 
+	public void addInputFile(File inputFile) {
+		this.inputFiles.add(inputFile);
+	}
+
 	public void setInputFile(File inputFile) {
-		this.inputFiles = Collections.singletonList(inputFile);
+		addInputFile(inputFile);
 	}
 
 	public void setInputFiles(List<File> inputFiles) {
@@ -499,7 +505,7 @@ public class JadxArgs implements Closeable {
 	 */
 	@Deprecated
 	public void setUseSourceNameAsClassAlias(boolean useSourceNameAsClassAlias) {
-		final var useSourceNameAsClassNameAlias = UseSourceNameAsClassNameAlias.create(useSourceNameAsClassAlias);
+		var useSourceNameAsClassNameAlias = UseSourceNameAsClassNameAlias.create(useSourceNameAsClassAlias);
 		setUseSourceNameAsClassNameAlias(useSourceNameAsClassNameAlias);
 	}
 
@@ -809,6 +815,10 @@ public class JadxArgs implements Closeable {
 		this.runDebugChecks = runDebugChecks;
 	}
 
+	public List<String> getDisabledPasses() {
+		return disabledPasses;
+	}
+
 	public Map<String, String> getPluginOptions() {
 		return pluginOptions;
 	}
@@ -871,8 +881,10 @@ public class JadxArgs implements Closeable {
 		if (decompiler == null) {
 			return "";
 		}
-		return decompiler.getPluginManager().getResolvedPluginContexts()
+		return decompiler.getPluginManager().getResolvedPlugins()
 				.stream()
+				.map(PluginRuntime::getPluginContext)
+				.filter(Objects::nonNull)
 				.map(PluginContext::getInputsHash)
 				.collect(Collectors.joining(":"));
 	}

@@ -19,4 +19,9 @@ public interface IJadxSecurity extends IJadxZipSecurity {
 	 * XML document parser
 	 */
 	Document parseXml(InputStream in);
+
+	/**
+	 * Sanitize/escape string to make it safe for use in place described by SanitizeType
+	 */
+	String sanitizeString(String str, SanitizeType type);
 }

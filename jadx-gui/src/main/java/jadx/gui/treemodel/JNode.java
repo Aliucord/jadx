@@ -45,6 +45,10 @@ public abstract class JNode extends DefaultMutableTreeNode implements ITreeNode,
 		return null;
 	}
 
+	public boolean hasContent() {
+		return false;
+	}
+
 	public @Nullable ContentPanel getContentPanel(TabbedPane tabbedPane) {
 		return null;
 	}
@@ -127,6 +131,17 @@ public abstract class JNode extends DefaultMutableTreeNode implements ITreeNode,
 
 	public @Nullable JNode searchNode(Predicate<JNode> filter) {
 		Enumeration<?> en = this.children();
+		while (en.hasMoreElements()) {
+			JNode node = (JNode) en.nextElement();
+			if (filter.test(node)) {
+				return node;
+			}
+		}
+		return null;
+	}
+
+	public @Nullable JNode searchDepthNode(Predicate<JNode> filter) {
+		Enumeration<?> en = this.breadthFirstEnumeration();
 		while (en.hasMoreElements()) {
 			JNode node = (JNode) en.nextElement();
 			if (filter.test(node)) {

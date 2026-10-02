@@ -1,5 +1,5 @@
 /**
- * Copyright 2014 Ryszard Wiśniewski <brut.alll@gmail.com>
+ * Copyright 2014 Ryszard Wiśniewski "brut.alll(at)gmail.com"
  * <p>
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import java.io.IOException;
 import java.io.InputStream;
 
 /**
- * @author Ryszard Wiśniewski "brut.alll@gmail.com"
+ * @author Ryszard Wiśniewski "brut.alll(at)gmail.com"
  */
 public class ExtDataInput extends DataInputDelegate {
 	public ExtDataInput(InputStream in) {

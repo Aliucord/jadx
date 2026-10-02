@@ -47,6 +47,7 @@ import jadx.core.export.ExportGradle;
 import jadx.core.export.OutDirs;
 import jadx.core.plugins.JadxPluginManager;
 import jadx.core.plugins.PluginContext;
+import jadx.core.plugins.PluginRuntime;
 import jadx.core.plugins.events.JadxEventsImpl;
 import jadx.core.utils.DecompilerScheduler;
 import jadx.core.utils.Utils;
@@ -113,7 +114,7 @@ public final class JadxDecompiler implements Closeable {
 
 	public JadxDecompiler(JadxArgs args) {
 		this.args = Objects.requireNonNull(args);
-		this.pluginManager = new JadxPluginManager(this);
+		this.pluginManager = new JadxPluginManager(args);
 		this.resourcesLoader = new ResourcesLoader(this);
 		this.zipReader = new ZipReader(args.getSecurity());
 	}
@@ -140,11 +141,16 @@ public final class JadxDecompiler implements Closeable {
 		loadFinished();
 	}
 
+	/**
+	 * Reload passes and plugins without processing classes and inputs
+	 */
 	public void reloadPasses() {
 		LOG.info("reloading (passes only) ...");
 		customPasses.clear();
 		root.resetPasses();
 		events.reset();
+		unloadPlugins();
+
 		loadPlugins();
 		root.mergePasses(customPasses);
 		root.restartVisitors();
@@ -157,15 +163,18 @@ public final class JadxDecompiler implements Closeable {
 		List<Path> inputPaths = Utils.collectionMap(args.getInputFiles(), File::toPath);
 		List<Path> inputFiles = FileUtils.expandDirs(inputPaths);
 		long start = System.currentTimeMillis();
-		for (PluginContext plugin : pluginManager.getResolvedPluginContexts()) {
-			for (JadxCodeInput codeLoader : plugin.getCodeInputs()) {
-				try {
-					ICodeLoader loader = codeLoader.loadFiles(inputFiles);
-					if (loader != null && !loader.isEmpty()) {
-						loadedInputs.add(loader);
+		for (PluginRuntime plugin : pluginManager.getResolvedPlugins()) {
+			PluginContext pluginContext = plugin.getPluginContext();
+			if (pluginContext != null) {
+				for (JadxCodeInput codeLoader : pluginContext.getCodeInputs()) {
+					try {
+						ICodeLoader loader = codeLoader.loadFiles(inputFiles);
+						if (loader != null && !loader.isEmpty()) {
+							loadedInputs.add(loader);
+						}
+					} catch (Exception e) {
+						LOG.warn("Failed to load code for plugin: {}", plugin, e);
 					}
-				} catch (Exception e) {
-					LOG.warn("Failed to load code for plugin: {}", plugin, e);
 				}
 			}
 		}
@@ -213,9 +222,9 @@ public final class JadxDecompiler implements Closeable {
 		pluginManager.providesSuggestion("java-input", args.isUseDxInput() ? "java-convert" : "java-input");
 		pluginManager.load(args.getPluginLoader());
 		if (LOG.isDebugEnabled()) {
-			LOG.debug("Resolved plugins: {}", pluginManager.getResolvedPluginContexts());
+			LOG.debug("Resolved plugins: {}", pluginManager.getResolvedPlugins());
 		}
-		pluginManager.initResolved();
+		pluginManager.initResolved(this);
 		if (LOG.isDebugEnabled()) {
 			List<String> passes = customPasses.values().stream().flatMap(Collection::stream)
 					.map(p -> p.getInfo().getName()).collect(Collectors.toList());
@@ -454,7 +463,7 @@ public final class JadxDecompiler implements Closeable {
 		return list;
 	}
 
-	public List<JavaClass> getClasses() {
+	public synchronized List<JavaClass> getClasses() {
 		if (root == null) {
 			return Collections.emptyList();
 		}
@@ -462,10 +471,7 @@ public final class JadxDecompiler implements Closeable {
 			List<ClassNode> classNodeList = root.getClasses();
 			List<JavaClass> clsList = new ArrayList<>(classNodeList.size());
 			for (ClassNode classNode : classNodeList) {
-				if (classNode.contains(AFlag.DONT_GENERATE)) {
-					continue;
-				}
-				if (!classNode.getClassInfo().isInner()) {
+				if (!classNode.contains(AFlag.DONT_GENERATE) && !classNode.isInner()) {
 					clsList.add(convertClassNode(classNode));
 				}
 			}
@@ -565,9 +571,10 @@ public final class JadxDecompiler implements Closeable {
 			return foundPkg;
 		}
 		List<JavaClass> clsList = Utils.collectionMap(pkg.getClasses(), this::convertClassNode);
+		List<JavaClass> clsListNoDup = Utils.collectionMap(pkg.getClassesNoDup(), this::convertClassNode);
 		int subPkgsCount = pkg.getSubPackages().size();
 		List<JavaPackage> subPkgs = subPkgsCount == 0 ? Collections.emptyList() : new ArrayList<>(subPkgsCount);
-		JavaPackage javaPkg = new JavaPackage(pkg, clsList, subPkgs);
+		JavaPackage javaPkg = new JavaPackage(pkg, clsList, clsListNoDup, subPkgs);
 		if (subPkgsCount != 0) {
 			// add subpackages after parent to avoid endless recursion
 			for (PackageNode subPackage : pkg.getSubPackages()) {

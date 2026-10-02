@@ -34,6 +34,7 @@ import jadx.core.dex.attributes.nodes.EnumClassAttr;
 import jadx.core.dex.attributes.nodes.EnumClassAttr.EnumField;
 import jadx.core.dex.attributes.nodes.LineAttrNode;
 import jadx.core.dex.attributes.nodes.MethodInlineAttr;
+import jadx.core.dex.attributes.nodes.NotificationAttrNode;
 import jadx.core.dex.attributes.nodes.SkipMethodArgsAttr;
 import jadx.core.dex.info.AccessInfo;
 import jadx.core.dex.info.ClassInfo;
@@ -121,17 +122,17 @@ public class ClassGen {
 	private void addImports(ICodeWriter clsCode) {
 		int importsCount = imports.size();
 		if (importsCount != 0) {
-			List<ClassInfo> sortedImports = new ArrayList<>(imports);
-			sortedImports.sort(Comparator.comparing(ClassInfo::getAliasFullName));
-			sortedImports.forEach(classInfo -> {
-				clsCode.startLine("import ");
-				ClassNode classNode = cls.root().resolveClass(classInfo);
-				if (classNode != null) {
-					clsCode.attachAnnotation(classNode);
-				}
-				clsCode.add(classInfo.getAliasFullName());
-				clsCode.add(';');
-			});
+			imports.stream()
+					.sorted(Comparator.comparing(ClassInfo::getAliasFullName))
+					.forEach(classInfo -> {
+						clsCode.startLine("import ");
+						ClassNode classNode = cls.root().resolveClass(classInfo);
+						if (classNode != null) {
+							clsCode.attachAnnotation(classNode);
+						}
+						clsCode.add(classInfo.getAliasFullName());
+						clsCode.add(';');
+					});
 			clsCode.newLine();
 			imports.clear();
 		}
@@ -155,8 +156,6 @@ public class ClassGen {
 		if (Consts.DEBUG_USAGE) {
 			addClassUsageInfo(code, cls);
 		}
-		CodeGenUtils.addErrorsAndComments(code, cls);
-		CodeGenUtils.addSourceFileInfo(code, cls);
 		addClassDeclaration(code);
 		addClassBody(code);
 	}
@@ -166,20 +165,19 @@ public class ClassGen {
 		if (af.isInterface()) {
 			af = af.remove(AccessFlags.ABSTRACT)
 					.remove(AccessFlags.STATIC);
-		} else if (af.isEnum()) {
-			af = af.remove(AccessFlags.FINAL)
-					.remove(AccessFlags.ABSTRACT)
-					.remove(AccessFlags.STATIC);
 		}
-
 		// 'static' and 'private' modifier not allowed for top classes (not inner)
 		if (!cls.getClassInfo().isInner()) {
 			af = af.remove(AccessFlags.STATIC).remove(AccessFlags.PRIVATE);
 		}
 
-		annotationGen.addForClass(clsCode);
-		insertRenameInfo(clsCode, cls);
+		CodeGenUtils.addComments(clsCode, cls);
+		CodeGenUtils.addClassRenamedComment(clsCode, cls);
+		CodeGenUtils.addErrors(clsCode, cls);
+		CodeGenUtils.addSourceFileInfo(clsCode, cls);
 		CodeGenUtils.addInputFileInfo(clsCode, cls);
+
+		annotationGen.addForClass(clsCode);
 		clsCode.startLineWithNum(cls.getSourceLine()).add(af.makeString(cls.checkCommentsLevel(CommentsLevel.INFO)));
 		if (af.isInterface()) {
 			if (af.isAnnotation()) {
@@ -292,7 +290,7 @@ public class ClassGen {
 	private void addInnerClsAndMethods(ICodeWriter clsCode) {
 		Stream.of(cls.getInnerClasses(), cls.getMethods())
 				.flatMap(Collection::stream)
-				.filter(node -> !node.contains(AFlag.DONT_GENERATE) || fallback)
+				.filter(node -> !skipNode(node))
 				.sorted(Comparator.comparingInt(LineAttrNode::getSourceLine))
 				.forEach(node -> {
 					if (node instanceof ClassNode) {
@@ -301,6 +299,18 @@ public class ClassGen {
 						addMethod(clsCode, (MethodNode) node);
 					}
 				});
+	}
+
+	private boolean skipNode(NotificationAttrNode node) {
+		if (fallback) {
+			return false;
+		}
+		if (Consts.DEBUG_ATTRIBUTES) {
+			if (node.contains(AType.JADX_COMMENTS)) {
+				return false;
+			}
+		}
+		return node.contains(AFlag.DONT_GENERATE);
 	}
 
 	private void addInnerClass(ICodeWriter code, ClassNode innerCls) {
@@ -434,10 +444,10 @@ public class ClassGen {
 		if (Consts.DEBUG_USAGE) {
 			addFieldUsageInfo(code, f);
 		}
+		CodeGenUtils.addComments(code, f);
 		if (f.getFieldInfo().hasAlias()) {
 			CodeGenUtils.addRenamedComment(code, f, f.getName());
 		}
-		CodeGenUtils.addComments(code, f);
 		annotationGen.addForField(code, f);
 
 		code.startLine(f.getAccessFlags().makeString(f.checkCommentsLevel(CommentsLevel.INFO)));
@@ -693,11 +703,11 @@ public class ClassGen {
 		if (extClsInfo.getPackage().equals("java.lang") && extClsInfo.getParentClass() == null) {
 			return shortName;
 		}
-		// don't add import if this class from same package
-		if (extClsInfo.getPackage().equals(useCls.getPackage()) && !extClsInfo.isInner()) {
-			return shortName;
-		}
 		if (extClsInfo.getAliasPkg().equals(useCls.getAliasPkg())) {
+			if (!extClsInfo.isInner()) {
+				// don't add import if this class from same package
+				return shortName;
+			}
 			fullName = extClsInfo.getAliasNameWithoutPackage();
 		}
 		for (ClassInfo importCls : getImports()) {
@@ -730,7 +740,16 @@ public class ClassGen {
 		}
 		Collections.reverse(clsList);
 		if (addImport) {
-			addImport(clsList.get(0));
+			ClassInfo top = clsList.get(0);
+			if (top != extClsInfo) {
+				String usedName = useClassInternal(useCls, top);
+				if (!usedName.equals(top.getAliasShortName())) {
+					// short top name can't be used, use full name as fallback
+					return extClsInfo.getAliasFullName();
+				}
+			} else {
+				addImport(top);
+			}
 		}
 		return Utils.listToString(clsList, ".", ClassInfo::getAliasShortName);
 	}
@@ -800,13 +819,6 @@ public class ClassGen {
 		}
 		String shortName = searchCls.getAliasShortName();
 		return root.getClsp().isClsKnown(currentPkg + '.' + shortName);
-	}
-
-	private void insertRenameInfo(ICodeWriter code, ClassNode cls) {
-		ClassInfo classInfo = cls.getClassInfo();
-		if (classInfo.hasAlias() && cls.checkCommentsLevel(CommentsLevel.INFO)) {
-			CodeGenUtils.addRenamedComment(code, cls, classInfo.getType().getObject());
-		}
 	}
 
 	private static void addClassUsageInfo(ICodeWriter code, ClassNode cls) {

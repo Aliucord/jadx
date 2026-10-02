@@ -420,7 +420,7 @@ public class JDebuggerPanel extends JPanel {
 	public void loadSettings() {
 		UiUtils.uiThreadGuard();
 
-		Font font = mainWindow.getSettings().getFont();
+		Font font = mainWindow.getSettings().getCodeFont();
 		variableTree.setFont(font.deriveFont(font.getSize() + 1.f));
 		variableTree.setRowHeight(-1);
 		stackFrameList.setFont(font);
@@ -448,6 +448,7 @@ public class JDebuggerPanel extends JPanel {
 	}
 
 	public void resetAllDebuggingInfo() {
+		UiUtils.uiThreadGuard();
 		clearFrameAndThreadList();
 		resetRegTreeNodes();
 		resetThisTreeNodes();
@@ -478,18 +479,20 @@ public class JDebuggerPanel extends JPanel {
 				elements.forEach(model::addElement);
 			}
 			threadBox.updateUI();
-			stackFrameList.setFont(mainWindow.getSettings().getFont());
+			stackFrameList.setFont(mainWindow.getSettings().getCodeFont());
 		});
 	}
 
 	public void refreshStackFrameList(List<? extends IListElement> elements) {
-		if (elements.size() > 0) {
-			DefaultListModel<IListElement> model =
-					(DefaultListModel<IListElement>) stackFrameList.getModel();
-			elements.forEach(model::addElement);
-			stackFrameList.setFont(mainWindow.getSettings().getFont());
-		}
-		SwingUtilities.invokeLater(stackFrameList::repaint);
+		UiUtils.uiRun(() -> {
+			if (!elements.isEmpty()) {
+				DefaultListModel<IListElement> model =
+						(DefaultListModel<IListElement>) stackFrameList.getModel();
+				model.addAll(elements);
+				stackFrameList.setFont(mainWindow.getSettings().getCodeFont());
+			}
+			stackFrameList.repaint();
+		});
 	}
 
 	public void refreshRegisterTree() {
@@ -578,7 +581,7 @@ public class JDebuggerPanel extends JPanel {
 
 		@Override
 		public String toString() {
-			StringBuilder sb = new StringBuilder();
+			StringBuilder sb = new StringBuilder(64);
 			sb.append(getName());
 			String val = getValue();
 			if (val != null) {

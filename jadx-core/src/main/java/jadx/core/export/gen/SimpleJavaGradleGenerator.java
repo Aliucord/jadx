@@ -1,10 +1,13 @@
 package jadx.core.export.gen;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.List;
 
 import jadx.api.ResourceFile;
+import jadx.api.security.IJadxSecurity;
+import jadx.api.security.SanitizeType;
 import jadx.core.dex.nodes.RootNode;
 import jadx.core.export.OutDirs;
 import jadx.core.export.TemplateFile;
@@ -43,14 +46,21 @@ public class SimpleJavaGradleGenerator implements IExportGradleGenerator {
 	}
 
 	private void saveSettingsGradle() throws IOException {
-		TemplateFile tmpl = TemplateFile.fromResources("/export/java/settings.gradle.kts.tmpl");
+		TemplateFile tmpl = loadGradleTemplate("/export/java/settings.gradle.kts.tmpl");
 		tmpl.add("projectName", GradleGeneratorTools.guessProjectName(root));
 		tmpl.save(new File(projectDir, "settings.gradle.kts"));
 	}
 
 	private void saveBuildGradle() throws IOException {
-		TemplateFile tmpl = TemplateFile.fromResources("/export/java/build.gradle.kts.tmpl");
+		TemplateFile tmpl = loadGradleTemplate("/export/java/build.gradle.kts.tmpl");
 		tmpl.save(new File(appDir, "build.gradle.kts"));
+	}
+
+	private TemplateFile loadGradleTemplate(String templatePath) throws FileNotFoundException {
+		TemplateFile tmpl = TemplateFile.fromResources(templatePath);
+		IJadxSecurity security = root.getArgs().getSecurity();
+		tmpl.setValueSanitizer(str -> security.sanitizeString(str, SanitizeType.GRADLE_KOTLIN));
+		return tmpl;
 	}
 
 	@Override

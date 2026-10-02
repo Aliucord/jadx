@@ -9,6 +9,8 @@ import java.util.Map;
 import java.util.Set;
 
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import jadx.core.dex.attributes.AFlag;
 import jadx.core.dex.attributes.nodes.LoopInfo;
@@ -19,19 +21,28 @@ import jadx.core.dex.instructions.args.ArgType;
 import jadx.core.dex.instructions.args.InsnArg;
 import jadx.core.dex.instructions.args.RegisterArg;
 import jadx.core.dex.nodes.BlockNode;
+import jadx.core.dex.nodes.IContainer;
 import jadx.core.dex.nodes.IRegion;
+import jadx.core.dex.nodes.InsnContainer;
 import jadx.core.dex.nodes.InsnNode;
 import jadx.core.dex.nodes.MethodNode;
 import jadx.core.dex.regions.Region;
 import jadx.core.dex.regions.SwitchRegion;
+import jadx.core.dex.regions.SwitchRegion.CaseInfo;
+import jadx.core.dex.visitors.regions.AbstractRegionVisitor;
+import jadx.core.dex.visitors.regions.DepthRegionTraversal;
+import jadx.core.dex.visitors.regions.SwitchBreakVisitor;
 import jadx.core.utils.BlockUtils;
+import jadx.core.utils.ListUtils;
 import jadx.core.utils.RegionUtils;
 import jadx.core.utils.Utils;
-import jadx.core.utils.exceptions.JadxRuntimeException;
+import jadx.core.utils.blocks.BlockSet;
 
-final class SwitchRegionMaker {
+public final class SwitchRegionMaker {
 	private final MethodNode mth;
 	private final RegionMaker regionMaker;
+
+	private static final Logger LOG = LoggerFactory.getLogger(SwitchRegionMaker.class);
 
 	SwitchRegionMaker(MethodNode mth, RegionMaker regionMaker) {
 		this.mth = mth;
@@ -61,21 +72,32 @@ final class SwitchRegionMaker {
 		BlockNode out = calcSwitchOut(block, insn, stack);
 		stack.addExit(out);
 
-		processFallThroughCases(sw, out, stack, blocksMap);
-		removeEmptyCases(insn, sw, defCase);
+		addCases(sw, out, stack, blocksMap);
+		removeEmptyCases(insn, sw, defCase, out);
 
 		stack.pop();
 		return out;
 	}
 
-	private void processFallThroughCases(SwitchRegion sw, @Nullable BlockNode out,
+	/**
+	 * Insert 'break' for all cases in switch region
+	 * Executed in {@link jadx.core.dex.visitors.regions.PostProcessRegions} after try/catch wrap to
+	 * handle all blocks
+	 */
+	public static void insertBreaks(MethodNode mth, SwitchRegion sw) {
+		for (SwitchRegion.CaseInfo caseInfo : sw.getCases()) {
+			insertBreaksForCase(mth, sw, caseInfo.getContainer());
+		}
+	}
+
+	private void addCases(SwitchRegion sw, @Nullable BlockNode out,
 			RegionStack stack, Map<BlockNode, List<Object>> blocksMap) {
 		Map<BlockNode, BlockNode> fallThroughCases = new LinkedHashMap<>();
 		if (out != null) {
 			// detect fallthrough cases
 			BitSet caseBlocks = BlockUtils.blocksToBitSet(mth, blocksMap.keySet());
-			caseBlocks.clear(out.getId());
-			for (BlockNode successor : sw.getHeader().getCleanSuccessors()) {
+			caseBlocks.clear(out.getPos());
+			for (BlockNode successor : sw.getHeader().getSuccessors()) {
 				BitSet df = successor.getDomFrontier();
 				if (df.intersects(caseBlocks)) {
 					BlockNode fallThroughBlock = getOneIntersectionBlock(out, caseBlocks, df);
@@ -93,31 +115,30 @@ final class SwitchRegionMaker {
 				}
 			}
 		}
-
 		for (Map.Entry<BlockNode, List<Object>> entry : blocksMap.entrySet()) {
 			List<Object> keysList = entry.getValue();
 			BlockNode caseBlock = entry.getKey();
+			Region caseRegion;
 			if (stack.containsExit(caseBlock)) {
-				sw.addCase(keysList, new Region(stack.peekRegion()));
+				caseRegion = new Region(stack.peekRegion());
 			} else {
 				BlockNode next = fallThroughCases.get(caseBlock);
 				stack.addExit(next);
-				Region caseRegion = regionMaker.makeRegion(caseBlock);
+				caseRegion = regionMaker.makeRegion(caseBlock);
 				stack.removeExit(next);
 				if (next != null) {
 					next.add(AFlag.FALL_THROUGH);
 					caseRegion.add(AFlag.FALL_THROUGH);
 				}
-				sw.addCase(keysList, caseRegion);
-				// 'break' instruction will be inserted in RegionMakerVisitor.PostRegionVisitor
 			}
+			sw.addCase(keysList, caseRegion);
 		}
 	}
 
 	@Nullable
 	private BlockNode getOneIntersectionBlock(BlockNode out, BitSet caseBlocks, BitSet fallThroughSet) {
 		BitSet caseExits = BlockUtils.copyBlocksBitSet(mth, fallThroughSet);
-		caseExits.clear(out.getId());
+		caseExits.clear(out.getPos());
 		caseExits.and(caseBlocks);
 		return BlockUtils.bitSetToOneBlock(mth, caseExits);
 	}
@@ -197,7 +218,10 @@ final class SwitchRegionMaker {
 		}
 		if (out != null && regionMaker.isProcessed(out)) {
 			// 'out' block already processed, prevent endless loop
-			throw new JadxRuntimeException("Failed to find switch 'out' block (already processed)");
+			// in this case it might be that 'out' is the LOOP_START of a loop and occurs before 'block'
+			// just try the immediate post dominator as a fallback
+			mth.addWarnComment("Switch 'out' block " + out + " for " + block + " already processed. Defaulting to fallback option.");
+			out = block.getIPostDom();
 		}
 		return out;
 	}
@@ -229,14 +253,14 @@ final class SwitchRegionMaker {
 			if (firstArg.isRegister()) {
 				RegisterArg reg = (RegisterArg) firstArg;
 				for (int i = 1; i < count; i++) {
-					InsnArg arg = returnArgs.get(1);
+					InsnArg arg = returnArgs.get(i);
 					if (!arg.isRegister() || !((RegisterArg) arg).sameCodeVar(reg)) {
 						return exitBlock;
 					}
 				}
 			} else {
 				for (int i = 1; i < count; i++) {
-					InsnArg arg = returnArgs.get(1);
+					InsnArg arg = returnArgs.get(i);
 					if (!arg.equals(firstArg)) {
 						return exitBlock;
 					}
@@ -259,29 +283,51 @@ final class SwitchRegionMaker {
 	 * 1. single 'default' case
 	 * 2. filler cases if switch is 'packed' and 'default' case is empty
 	 */
-	private void removeEmptyCases(SwitchInsn insn, SwitchRegion sw, BlockNode defCase) {
+	private void removeEmptyCases(SwitchInsn insn, SwitchRegion sw, BlockNode defCase, BlockNode outBlock) {
 		boolean defaultCaseIsEmpty;
 		if (defCase == null) {
 			defaultCaseIsEmpty = true;
 		} else {
 			defaultCaseIsEmpty = sw.getCases().stream()
 					.anyMatch(c -> c.getKeys().contains(SwitchRegion.DEFAULT_CASE_KEY)
-							&& RegionUtils.isEmpty(c.getContainer()));
+							&& canRemove(c.getContainer(), outBlock));
 		}
 		if (defaultCaseIsEmpty) {
-			sw.getCases().removeIf(caseInfo -> {
-				if (RegionUtils.isEmpty(caseInfo.getContainer())) {
+			List<CaseInfo> cases = new ArrayList<>(sw.getCases());
+			for (CaseInfo caseInfo : cases) {
+				if (canRemove(caseInfo.getContainer(), outBlock)) {
 					List<Object> keys = caseInfo.getKeys();
-					if (keys.contains(SwitchRegion.DEFAULT_CASE_KEY)) {
-						return true;
-					}
-					if (insn.isPacked()) {
-						return true;
+					if (keys.contains(SwitchRegion.DEFAULT_CASE_KEY) || insn.isPacked()) {
+						// Remove case and mark all blocks as don't generate
+						RegionUtils.addToAll(mth, caseInfo.getContainer(), AFlag.DONT_GENERATE);
+						sw.getCases().remove(caseInfo);
 					}
 				}
-				return false;
-			});
+			}
 		}
+	}
+
+	/*
+	 * Check container is empty and all paths through container are empty up until outBlock
+	 */
+	private boolean canRemove(IContainer container, BlockNode outBlock) {
+		if (RegionUtils.isEmpty(container)) {
+			if (container instanceof BlockNode) {
+				// Base case - empty path from block node to outBlock
+				return BlockUtils.followEmptyPath((BlockNode) container) == outBlock;
+			} else if (container instanceof IRegion) {
+				// Recursive case - every subBlock can be removed
+				List<IContainer> subBlocks = ((IRegion) container).getSubBlocks();
+				for (IContainer subBlock : subBlocks) {
+					if (!canRemove(subBlock, outBlock)) {
+						return false;
+					}
+				}
+				return true;
+			}
+			LOG.debug("Unexpected container type in switch");
+		}
+		return false;
 	}
 
 	private boolean isBadCasesOrder(Map<BlockNode, List<Object>> blocksMap, Map<BlockNode, BlockNode> fallThroughCases) {
@@ -328,7 +374,7 @@ final class SwitchRegionMaker {
 					// 'continue' not needed
 				} else {
 					for (BlockNode p : loopEnd.getPredecessors()) {
-						if (list.contains(p)) {
+						if (list.contains(p) || p == caseBlock) {
 							if (p.isSynthetic()) {
 								p.getInstructions().add(new InsnNode(InsnType.CONTINUE, 0));
 								inserted = true;
@@ -340,5 +386,50 @@ final class SwitchRegionMaker {
 			}
 		}
 		return inserted;
+	}
+
+	/**
+	 * Add break to every exit edge from 'case' region.
+	 * 'Break' optimizations (code duplication, unreachable, etc.) will be done at
+	 * {@link SwitchBreakVisitor}
+	 */
+	private static void insertBreaksForCase(MethodNode mth, SwitchRegion switchRegion, IContainer caseContainer) {
+		BlockSet caseBlocks = new BlockSet(mth);
+		RegionUtils.visitBlockNodes(mth, caseContainer, caseBlocks::add);
+		DepthRegionTraversal.traverse(mth, caseContainer, new AbstractRegionVisitor() {
+			@Override
+			public void leaveRegion(MethodNode mth, IRegion region) {
+				boolean insertBreak = false;
+				if (region == caseContainer) {
+					// top region
+					insertBreak = true;
+				} else {
+					IContainer lastContainer = ListUtils.last(region.getSubBlocks());
+					if (lastContainer instanceof BlockNode) {
+						BlockNode lastBlock = (BlockNode) lastContainer;
+						for (BlockNode successor : lastBlock.getSuccessors()) {
+							if (!caseBlocks.contains(successor)) {
+								insertBreak = true;
+								break;
+							}
+						}
+					}
+				}
+				if (insertBreak && canAppendBreak(region)) {
+					region.getSubBlocks().add(buildBreakContainer(switchRegion));
+				}
+			}
+		});
+	}
+
+	public static boolean canAppendBreak(IRegion region) {
+		return !region.contains(AFlag.FALL_THROUGH) && !RegionUtils.hasExitBlock(region);
+	}
+
+	public static InsnContainer buildBreakContainer(SwitchRegion switchRegion) {
+		InsnNode breakInsn = new InsnNode(InsnType.BREAK, 0);
+		breakInsn.add(AFlag.SYNTHETIC);
+		breakInsn.addAttr(new RegionRefAttr(switchRegion));
+		return new InsnContainer(breakInsn);
 	}
 }

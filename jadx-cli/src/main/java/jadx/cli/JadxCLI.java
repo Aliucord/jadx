@@ -1,20 +1,26 @@
 package jadx.cli;
 
+import java.nio.file.Path;
 import java.util.function.Consumer;
 
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import jadx.analysis.callgraph.JadxCallGraph;
+import jadx.analysis.callgraph.api.ICallGraph;
 import jadx.api.JadxArgs;
 import jadx.api.JadxDecompiler;
 import jadx.api.impl.AnnotatedCodeWriter;
 import jadx.api.impl.NoOpCodeCache;
 import jadx.api.impl.SimpleCodeWriter;
+import jadx.api.plugins.gui.IJadxGuiPlugin;
 import jadx.api.usage.impl.EmptyUsageInfoCache;
 import jadx.cli.LogHelper.LogLevelEnum;
+import jadx.cli.config.JadxConfigAdapter;
 import jadx.cli.plugins.JadxFilesGetter;
 import jadx.core.utils.exceptions.JadxArgsValidateException;
+import jadx.core.utils.exceptions.JadxRuntimeException;
 import jadx.plugins.tools.JadxExternalPluginsLoader;
 
 public class JadxCLI {
@@ -35,15 +41,17 @@ public class JadxCLI {
 
 	public static int execute(String[] args, @Nullable Consumer<JadxArgs> argsMod) {
 		try {
-			JadxCLIArgs cliArgs = new JadxCLIArgs();
-			if (cliArgs.processArgs(args)) {
-				JadxArgs jadxArgs = buildArgs(cliArgs);
-				if (argsMod != null) {
-					argsMod.accept(jadxArgs);
-				}
-				return runSave(jadxArgs, cliArgs);
+			JadxCLIArgs cliArgs = JadxCLIArgs.processArgs(args,
+					new JadxCLIArgs(),
+					new JadxConfigAdapter<>(JadxCLIArgs.class, "cli"));
+			if (cliArgs == null) {
+				return 0;
 			}
-			return 0;
+			JadxArgs jadxArgs = buildArgs(cliArgs);
+			if (argsMod != null) {
+				argsMod.accept(jadxArgs);
+			}
+			return runSave(jadxArgs, cliArgs);
 		} catch (JadxArgsValidateException e) {
 			LOG.error("Incorrect arguments: {}", e.getMessage());
 			return 1;
@@ -54,12 +62,10 @@ public class JadxCLI {
 	}
 
 	private static JadxArgs buildArgs(JadxCLIArgs cliArgs) {
-		LogHelper.initLogLevel(cliArgs);
-		LogHelper.setLogLevelsForLoadingStage();
 		JadxArgs jadxArgs = cliArgs.toJadxArgs();
 		jadxArgs.setCodeCache(new NoOpCodeCache());
 		jadxArgs.setUsageInfoCache(new EmptyUsageInfoCache());
-		jadxArgs.setPluginLoader(new JadxExternalPluginsLoader());
+		jadxArgs.setPluginLoader(buildCliPluginLoader());
 		jadxArgs.setFilesGetter(JadxFilesGetter.INSTANCE);
 		initCodeWriterProvider(jadxArgs);
 		JadxAppCommon.applyEnvVars(jadxArgs);
@@ -70,9 +76,9 @@ public class JadxCLI {
 		try (JadxDecompiler jadx = new JadxDecompiler(jadxArgs)) {
 			jadx.load();
 			if (checkForErrors(jadx)) {
-				return 1;
+				return 2;
 			}
-			LogHelper.setLogLevelsForDecompileStage();
+			writeCallGraph(jadx, cliArgs);
 			if (!SingleClassMode.process(jadx, cliArgs)) {
 				save(jadx);
 			}
@@ -80,7 +86,7 @@ public class JadxCLI {
 			if (errorsCount != 0) {
 				jadx.printErrorsReport();
 				LOG.error("finished with errors, count: {}", errorsCount);
-				return 1;
+				return 3;
 			}
 			LOG.info("done");
 			return 0;
@@ -99,6 +105,11 @@ public class JadxCLI {
 		}
 	}
 
+	private static JadxExternalPluginsLoader buildCliPluginLoader() {
+		// exclude "jadx-gui only" plugins
+		return new JadxExternalPluginsLoader(cls -> !IJadxGuiPlugin.class.isAssignableFrom(cls));
+	}
+
 	private static boolean checkForErrors(JadxDecompiler jadx) {
 		if (jadx.getRoot().getClasses().isEmpty()) {
 			if (jadx.getArgs().isSkipResources()) {
@@ -110,10 +121,10 @@ public class JadxCLI {
 				jadx.getArgs().setSkipSources(true);
 			}
 		}
-		if (jadx.getErrorsCount() > 0) {
-			LOG.error("Load with errors! Check log for details");
+		int errorsCount = jadx.getErrorsCount();
+		if (errorsCount > 0) {
+			LOG.error("Loading finished with errors! Count: {}", errorsCount);
 			// continue processing
-			return false;
 		}
 		return false;
 	}
@@ -130,5 +141,30 @@ public class JadxCLI {
 			// dumb line clear :)
 			System.out.print("                                                             \r");
 		}
+	}
+
+	private static void writeCallGraph(JadxDecompiler jadx, JadxCLIArgs cliArgs) {
+		JadxCLIArgs.CallGraphSaveMode mode = cliArgs.callGraphSaveMode;
+		if (mode == null || mode == JadxCLIArgs.CallGraphSaveMode.NONE) {
+			return;
+		}
+		Path outPath = jadx.getArgs().getOutDir().toPath();
+		ICallGraph callGraph = JadxCallGraph.builder(jadx)
+				.resolvedOnly(true)
+				.build();
+		Path cgPath;
+		switch (mode) {
+			case JSON:
+				cgPath = outPath.resolve("callgraph.json");
+				callGraph.writeJson(cgPath);
+				break;
+			case DOT:
+				cgPath = outPath.resolve("callgraph.dot");
+				callGraph.writeDot(cgPath);
+				break;
+			default:
+				throw new JadxRuntimeException("Unexpected call graph save mode: " + mode);
+		}
+		LOG.info("Call graph saved: {}", cgPath.toAbsolutePath());
 	}
 }

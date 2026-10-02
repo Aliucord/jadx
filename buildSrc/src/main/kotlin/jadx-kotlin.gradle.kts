@@ -2,7 +2,13 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
 	id("jadx-java")
-	id("org.jetbrains.kotlin.jvm")
+
+	alias(libs.plugins.kotlin.jvm)
+}
+
+dependencies {
+	implementation(kotlin("stdlib"))
+	implementation(kotlin("reflect")) // don't work from plugin classloader
 }
 
 kotlin {

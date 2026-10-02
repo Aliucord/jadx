@@ -12,14 +12,16 @@ import java.util.PropertyResourceBundle;
 import java.util.ResourceBundle;
 import java.util.Vector;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import jadx.core.utils.exceptions.JadxRuntimeException;
 
 public class NLS {
+	private static final Logger LOG = LoggerFactory.getLogger(NLS.class);
 
 	private static final Vector<LangLocale> LANG_LOCALES = new Vector<>();
-
 	private static final Map<LangLocale, ResourceBundle> LANG_LOCALES_MAP = new HashMap<>();
-
 	private static final ResourceBundle FALLBACK_MESSAGES_MAP;
 	private static final LangLocale LOCAL_LOCALE;
 
@@ -44,7 +46,6 @@ public class NLS {
 
 		LangLocale defLang = LANG_LOCALES.get(0);
 		FALLBACK_MESSAGES_MAP = LANG_LOCALES_MAP.get(defLang);
-		localizedMessagesMap = LANG_LOCALES_MAP.get(defLang);
 	}
 
 	private NLS() {
@@ -69,8 +70,8 @@ public class NLS {
 	public static String str(String key) {
 		try {
 			return localizedMessagesMap.getString(key);
-		} catch (Exception e) {
-			return FALLBACK_MESSAGES_MAP.getString(key);
+		} catch (MissingResourceException e) {
+			return getFallbackString(key);
 		}
 	}
 
@@ -87,7 +88,16 @@ public class NLS {
 				// use fallback string
 			}
 		}
-		return FALLBACK_MESSAGES_MAP.getString(key); // definitely exists
+		return getFallbackString(key);
+	}
+
+	private static String getFallbackString(String key) {
+		try {
+			return FALLBACK_MESSAGES_MAP.getString(key);
+		} catch (Exception ex) {
+			LOG.error("Missing fallback value for key: {}", key, ex);
+			return key;
+		}
 	}
 
 	public static void setLocale(LangLocale locale) {
@@ -111,7 +121,7 @@ public class NLS {
 		if (LANG_LOCALES_MAP.containsKey(LOCAL_LOCALE)) {
 			return LOCAL_LOCALE;
 		}
-		// fallback to english if unsupported
+		// fallback to English if unsupported
 		return LANG_LOCALES.get(0);
 	}
 }

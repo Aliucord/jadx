@@ -1,4 +1,5 @@
 plugins {
+	id("jadx-java")
 	id("jadx-library")
 }
 
@@ -7,5 +8,8 @@ dependencies {
 
 	implementation(project(":jadx-commons:jadx-app-commons"))
 
-	implementation("com.google.code.gson:gson:2.13.1")
+	implementation(libs.gson)
+	implementation(libs.commons.io)
+
+	testImplementation(libs.mockwebserver)
 }

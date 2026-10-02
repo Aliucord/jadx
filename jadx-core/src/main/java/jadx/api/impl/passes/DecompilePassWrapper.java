@@ -29,7 +29,7 @@ public class DecompilePassWrapper extends AbstractVisitor implements IPassWrappe
 	public void init(RootNode root) throws JadxException {
 		try {
 			decompilePass.init(root);
-		} catch (Throwable e) {
+		} catch (StackOverflowError | Exception e) {
 			LOG.error("Error in decompile pass init: {}", this, e);
 		}
 	}
@@ -38,8 +38,8 @@ public class DecompilePassWrapper extends AbstractVisitor implements IPassWrappe
 	public boolean visit(ClassNode cls) throws JadxException {
 		try {
 			return decompilePass.visit(cls);
-		} catch (Throwable e) {
-			LOG.error("Error in decompile pass: {}, class: {}", this, cls, e);
+		} catch (StackOverflowError | Exception e) {
+			cls.addError("Error in decompile pass: " + this, e);
 			return false;
 		}
 	}
@@ -48,8 +48,8 @@ public class DecompilePassWrapper extends AbstractVisitor implements IPassWrappe
 	public void visit(MethodNode mth) throws JadxException {
 		try {
 			decompilePass.visit(mth);
-		} catch (Throwable e) {
-			LOG.error("Error in decompile pass: {}, method: {}", this, mth, e);
+		} catch (StackOverflowError | Exception e) {
+			mth.addError("Error in decompile pass: " + this, e);
 		}
 	}
 

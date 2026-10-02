@@ -43,10 +43,9 @@ public class LogHelper {
 			return null;
 		}
 		if (args.quiet) {
-			return LogLevelEnum.QUIET;
-		}
-		if (args.verbose) {
-			return LogLevelEnum.DEBUG;
+			args.logLevel = LogLevelEnum.QUIET;
+		} else if (args.verbose) {
+			args.logLevel = LogLevelEnum.DEBUG;
 		}
 		return args.logLevel;
 	}
@@ -56,20 +55,7 @@ public class LogHelper {
 		applyLogLevel(logLevelValue);
 	}
 
-	public static void setLogLevelsForLoadingStage() {
-		if (logLevelValue == null) {
-			return;
-		}
-		if (logLevelValue == LogLevelEnum.PROGRESS) {
-			// show load errors
-			LogHelper.applyLogLevel(LogLevelEnum.ERROR);
-			fixForShowProgress();
-			return;
-		}
-		applyLogLevel(logLevelValue);
-	}
-
-	public static void setLogLevelsForDecompileStage() {
+	public static void applyLogLevels() {
 		if (logLevelValue == null) {
 			return;
 		}
@@ -86,6 +72,9 @@ public class LogHelper {
 		setLevelForClass(JadxCLI.class, Level.INFO);
 		setLevelForClass(JadxDecompiler.class, Level.INFO);
 		setLevelForClass(SingleClassMode.class, Level.INFO);
+
+		// show warnings and errors from input plugins
+		setLevelForPackage("jadx.plugins.input", Level.WARN);
 	}
 
 	private static void applyLogLevel(@NotNull LogLevelEnum logLevel) {

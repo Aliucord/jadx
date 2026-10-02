@@ -61,7 +61,7 @@ public class HexPreviewPanel extends JPanel {
 
 	public HexPreviewPanel(JadxSettings settings) {
 		hexCodeArea = new SectCodeArea();
-		hexCodeArea.setCodeFont(settings.getFont());
+		hexCodeArea.setCodeFont(settings.getSmaliFont());
 		hexCodeArea.setEditMode(EditMode.READ_ONLY);
 		hexCodeArea.setCharset(StandardCharsets.UTF_8);
 		hexCodeArea.setComponentPopupMenu(new JPopupMenu() {
@@ -80,7 +80,7 @@ public class HexPreviewPanel extends JPanel {
 		inspector = new HexInspectorPanel();
 		searchBar = new HexSearchBar(hexCodeArea);
 		header = new HexEditorHeader(hexCodeArea);
-		header.setFont(settings.getFont());
+		header.setFont(settings.getUiFont());
 
 		CodeAreaPainter painter = hexCodeArea.getPainter();
 		defaultColors = (SectionCodeAreaColorProfile) hexCodeArea.getColorsProfile();
@@ -131,7 +131,13 @@ public class HexPreviewPanel extends JPanel {
 	public void setData(byte[] data) {
 		if (data != null) {
 			hexCodeArea.setContentData(new ByteArrayEditableData(data));
-			inspector.setBytes(data);
+		}
+	}
+
+	public void setData(BinaryData data) {
+		if (data != null) {
+			hexCodeArea.setContentData(data);
+			inspector.setContentData(data);
 		}
 	}
 
@@ -315,4 +321,7 @@ public class HexPreviewPanel extends JPanel {
 		UiUtils.copyToClipboard(str);
 	}
 
+	public void dispose() {
+		hexCodeArea.getContentData().dispose();
+	}
 }

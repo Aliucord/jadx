@@ -6,13 +6,13 @@ dependencies {
 	api(project(":jadx-core"))
 
 	// TODO: finish own smali printer
-	implementation("com.android.tools.smali:smali-baksmali:3.0.9") {
+	implementation(libs.smali.baksmali) {
 		exclude(group = "com.beust", module = "jcommander") // exclude old jcommander namespace
 	}
-	implementation("com.google.guava:guava:33.4.8-jre") // force the latest version for smali
+	implementation(libs.guava.jre) // force the latest version for smali
 
 	// compile smali files in tests
-	testImplementation("com.android.tools.smali:smali:3.0.9") {
+	testImplementation(libs.smali) {
 		exclude(group = "com.beust", module = "jcommander") // exclude old jcommander namespace
 	}
 }

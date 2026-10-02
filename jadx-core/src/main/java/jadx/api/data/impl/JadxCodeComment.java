@@ -31,7 +31,7 @@ public class JadxCodeComment implements ICodeComment {
 	public JadxCodeComment(IJavaNodeRef nodeRef, @Nullable IJavaCodeRef codeRef, String comment, CommentStyle style) {
 		this.nodeRef = nodeRef;
 		this.codeRef = codeRef;
-		this.comment = comment;
+		this.comment = comment.replace("*/", "* /"); // sanitize comment
 		this.style = style;
 	}
 
@@ -64,7 +64,7 @@ public class JadxCodeComment implements ICodeComment {
 	}
 
 	public void setComment(String comment) {
-		this.comment = comment;
+		this.comment = comment.replace("*/", "* /"); // sanitize comment
 	}
 
 	@Override

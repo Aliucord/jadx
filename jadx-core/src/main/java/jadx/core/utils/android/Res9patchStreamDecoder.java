@@ -1,5 +1,5 @@
 /**
- * Copyright 2014 Ryszard Wiśniewski <brut.alll@gmail.com>
+ * Copyright 2014 Ryszard Wiśniewski "brut.alll(at)gmail.com"
  * <p>
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ import org.jetbrains.annotations.Nullable;
 import jadx.core.utils.exceptions.JadxRuntimeException;
 
 /**
- * @author Ryszard Wiśniewski "brut.alll@gmail.com"
+ * @author Ryszard Wiśniewski "brut.alll(at)gmail.com"
  */
 public class Res9patchStreamDecoder {
 

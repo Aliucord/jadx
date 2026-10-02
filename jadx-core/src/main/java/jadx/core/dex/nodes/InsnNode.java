@@ -217,6 +217,19 @@ public class InsnNode extends LineAttrNode {
 		}
 	}
 
+	public boolean isExitEdgeInsn() {
+		switch (getType()) {
+			case RETURN:
+			case THROW:
+			case CONTINUE:
+			case BREAK:
+				return true;
+
+			default:
+				return false;
+		}
+	}
+
 	public boolean canRemoveResult() {
 		switch (getType()) {
 			case INVOKE:
@@ -391,6 +404,14 @@ public class InsnNode extends LineAttrNode {
 		return isSame(other)
 				&& Objects.equals(result, other.result)
 				&& Objects.equals(arguments, other.arguments);
+	}
+
+	@SuppressWarnings("unchecked")
+	public static <T extends InsnArg> @Nullable T duplicateArg(@Nullable T arg) {
+		if (arg == null) {
+			return null;
+		}
+		return (T) arg.duplicate();
 	}
 
 	protected final <T extends InsnNode> T copyCommonParams(T copy) {

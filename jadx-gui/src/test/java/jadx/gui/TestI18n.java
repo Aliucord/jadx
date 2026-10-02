@@ -4,17 +4,25 @@ import java.io.IOException;
 import java.io.Reader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.apache.commons.lang3.StringUtils;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import jadx.api.plugins.utils.CommonFileUtils;
+import jadx.core.utils.exceptions.JadxRuntimeException;
 import jadx.gui.utils.LangLocale;
 import jadx.gui.utils.NLS;
 
@@ -116,27 +124,92 @@ public class TestI18n {
 		fail("I18n file: " + path.getFileName() + " and " + DEFAULT_LANG_FILE + " differ in line " + line);
 	}
 
+	/**
+	 * Temporary solution to allow use I18N strings in plugins until proper API implemented
+	 */
+	private static final List<String> EXCLUDED_KEYS = Arrays.asList(
+			// keys from `jadx-script-kotlin`
+			"file.save",
+			"tree.input_scripts",
+			"popup.new_script",
+			"popup.add_scripts",
+			"script.log",
+			"script.format",
+			"script.check");
+
+	/**
+	 * All keys should be used in code and all keys in code should exist in default lang file
+	 */
 	@Test
-	public void keyIsUsed() throws IOException {
+	public void keyUsage() throws IOException {
+		Set<String> codeKeys = collectKeysFromCode();
 		Properties properties = new Properties();
 		try (Reader reader = Files.newBufferedReader(i18nPath.resolve(DEFAULT_LANG_FILE))) {
 			properties.load(reader);
 		}
 		Set<String> keys = new HashSet<>();
-		for (Object key : properties.keySet()) {
-			keys.add("\"" + key + '"');
+		for (Object keyObj : properties.keySet()) {
+			keys.add((String) keyObj);
 		}
+		EXCLUDED_KEYS.forEach(keys::remove);
+
+		List<String> errors = new ArrayList<>();
+		for (String codeKey : codeKeys) {
+			if (!keys.contains(codeKey)) {
+				errors.add(String.format("Key '%s' not found in NLS strings", codeKey));
+			}
+		}
+		for (String key : keys) {
+			if (!codeKeys.contains(key)) {
+				errors.add(String.format("Key '%s' not used in code", key));
+			}
+		}
+		if (!errors.isEmpty()) {
+			fail("NLS key usage errors:\n " + StringUtils.join(errors, "\n "));
+		}
+	}
+
+	private static Set<String> collectKeysFromCode() throws IOException {
+		Set<String> keys = new HashSet<>();
 		try (Stream<Path> walk = Files.walk(guiJavaPath)) {
-			walk.filter(Files::isRegularFile).forEach(p -> {
-				try {
-					for (String line : Files.readAllLines(p)) {
-						keys.removeIf(line::contains);
-					}
-				} catch (Exception e) {
-					throw new RuntimeException(e);
-				}
-			});
+			walk.filter(TestI18n::filterCodeFiles)
+					.forEach(codeFile -> {
+						try {
+							for (String line : Files.readAllLines(codeFile)) {
+								processCodeLine(codeFile, line, keys);
+							}
+						} catch (Exception e) {
+							throw new JadxRuntimeException("Failed to process file: " + codeFile, e);
+						}
+					});
 		}
-		assertThat(keys).as("keys not used").isEmpty();
+		return keys;
+	}
+
+	private static boolean filterCodeFiles(Path filePath) {
+		String ext = CommonFileUtils.getFileExtension(filePath.getFileName().toString());
+		return Objects.equals(ext, "java") || Objects.equals(ext, "kt");
+	}
+
+	private static final Pattern NLS_STR_USAGE = Pattern.compile("NLS\\.str\\(\"([\\w._]*)\"[,)]");
+
+	private static void processCodeLine(Path p, String line, Set<String> keys) {
+		if (line.contains("NLS.str(")) {
+			boolean find = false;
+			Matcher matcher = NLS_STR_USAGE.matcher(line);
+			while (matcher.find()) {
+				String key = matcher.group(1);
+				keys.add(key);
+				find = true;
+			}
+			if (!find) {
+				throw new JadxRuntimeException("NLS.str() should be used with constant string key, but got: "
+						+ line.substring(line.indexOf("NLS.str("))
+						+ ", file: " + p);
+			}
+		}
+		if (line.startsWith("import static jadx.gui.utils.NLS.str;")) {
+			throw new JadxRuntimeException("NLS.str() method import is forbidden, file: " + p);
+		}
 	}
 }

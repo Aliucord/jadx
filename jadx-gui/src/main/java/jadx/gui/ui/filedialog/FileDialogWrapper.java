@@ -17,7 +17,7 @@ import jadx.gui.utils.NLS;
 public class FileDialogWrapper {
 
 	private static final List<String> OPEN_FILES_EXTS = Arrays.asList(
-			"apk", "dex", "jar", "class", "smali", "zip", "aar", "arsc", "jadx.kts", "xapk", "apkm");
+			"apk", "dex", "jar", "class", "smali", "zip", "aar", "arsc", "jadx.kts", "xapk", "apkm", "apks");
 
 	private final MainWindow mainWindow;
 
@@ -124,7 +124,7 @@ public class FileDialogWrapper {
 				break;
 
 			case EXPORT_NODE_FOLDER:
-				isOpen = true;
+				isOpen = false;
 				title = NLS.str("file.save_all_msg");
 				currentDir = mainWindow.getSettings().getLastSaveFilePath();
 				selectionMode = JFileChooser.DIRECTORIES_ONLY;

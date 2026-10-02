@@ -1,8 +1,11 @@
 package jadx.gui.utils.plugins;
 
-import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.SortedSet;
-import java.util.TreeSet;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import jadx.api.JadxArgs;
 import jadx.api.JadxDecompiler;
@@ -10,8 +13,8 @@ import jadx.cli.plugins.JadxFilesGetter;
 import jadx.core.plugins.AppContext;
 import jadx.core.plugins.JadxPluginManager;
 import jadx.core.plugins.PluginContext;
+import jadx.core.plugins.PluginRuntime;
 import jadx.gui.ui.MainWindow;
-import jadx.plugins.tools.JadxExternalPluginsLoader;
 
 /**
  * Collect all plugins.
@@ -27,12 +30,18 @@ public class CollectPlugins {
 	}
 
 	public CloseablePlugins build() {
-		SortedSet<PluginContext> allPlugins = new TreeSet<>();
-		mainWindow.getWrapper().getCurrentDecompiler()
-				.ifPresent(decompiler -> allPlugins.addAll(decompiler.getPluginManager().getResolvedPluginContexts()));
-
-		// collect and init not loaded plugins in new temp context
-		Runnable closeable = null;
+		Optional<JadxDecompiler> currentDecompiler = mainWindow.getWrapper().getCurrentDecompiler();
+		if (currentDecompiler.isPresent()) {
+			JadxDecompiler decompiler = currentDecompiler.get();
+			List<PluginContext> plugins = decompiler.getPluginManager().getResolvedPlugins()
+					.stream()
+					.map(PluginRuntime::getPluginContext)
+					.filter(Objects::nonNull)
+					.collect(Collectors.toList());
+			return new CloseablePlugins(plugins, null);
+		}
+		SortedSet<PluginRuntime> globalPlugins = mainWindow.getGuiPluginsManager().getGlobalPlugins();
+		// collect and init plugins in new temp context
 		JadxArgs jadxArgs = mainWindow.getSettings().toJadxArgs();
 		jadxArgs.setFilesGetter(JadxFilesGetter.INSTANCE);
 		try (JadxDecompiler decompiler = new JadxDecompiler(jadxArgs)) {
@@ -43,19 +52,15 @@ public class CollectPlugins {
 				appContext.setFilesGetter(jadxArgs.getFilesGetter());
 				pluginContext.setAppContext(appContext);
 			});
-			pluginManager.load(new JadxExternalPluginsLoader());
-			SortedSet<PluginContext> missingPlugins = new TreeSet<>();
-			for (PluginContext context : pluginManager.getAllPluginContexts()) {
-				if (!allPlugins.contains(context)) {
-					missingPlugins.add(context);
-				}
-			}
-			if (!missingPlugins.isEmpty()) {
-				pluginManager.init(missingPlugins);
-				allPlugins.addAll(missingPlugins);
-				closeable = () -> pluginManager.unload(missingPlugins);
-			}
+			pluginManager.load(mainWindow.getGuiPluginsManager().buildProjectPluginLoader());
+			SortedSet<PluginRuntime> allPlugins = pluginManager.getAllPlugins();
+			pluginManager.init(decompiler, allPlugins);
+			Runnable closeable = () -> pluginManager.unload(allPlugins);
+			List<PluginContext> plugins = Stream.concat(globalPlugins.stream(), allPlugins.stream())
+					.map(PluginRuntime::getPluginContext)
+					.filter(Objects::nonNull)
+					.collect(Collectors.toList());
+			return new CloseablePlugins(plugins, closeable);
 		}
-		return new CloseablePlugins(new ArrayList<>(allPlugins), closeable);
 	}
 }

@@ -7,7 +7,8 @@ public enum JadxSecurityFlag {
 
 	VERIFY_APP_PACKAGE,
 	SECURE_XML_PARSER,
-	SECURE_ZIP_READER;
+	SECURE_ZIP_READER,
+	SANITIZE_STRINGS;
 
 	public static Set<JadxSecurityFlag> all() {
 		return EnumSet.allOf(JadxSecurityFlag.class);

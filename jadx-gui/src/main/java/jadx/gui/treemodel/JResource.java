@@ -4,8 +4,10 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import javax.swing.Icon;
 import javax.swing.ImageIcon;
@@ -26,11 +28,8 @@ import jadx.core.xmlgen.ResContainer;
 import jadx.gui.jobs.SimpleTask;
 import jadx.gui.ui.MainWindow;
 import jadx.gui.ui.codearea.AbstractCodeArea;
-import jadx.gui.ui.codearea.BinaryContentPanel;
-import jadx.gui.ui.codearea.CodeContentPanel;
 import jadx.gui.ui.panel.ContentPanel;
-import jadx.gui.ui.panel.FontPanel;
-import jadx.gui.ui.panel.ImagePanel;
+import jadx.gui.ui.panel.ResourcePanel;
 import jadx.gui.ui.popupmenu.JResourcePopupMenu;
 import jadx.gui.ui.tab.TabbedPane;
 import jadx.gui.utils.Icons;
@@ -69,7 +68,7 @@ public class JResource extends JLoadableNode {
 	}
 
 	private final transient String name;
-	private final transient String shortName;
+	private transient String shortName;
 	private final transient JResType type;
 	private final transient ResourceFile resFile;
 
@@ -77,11 +76,14 @@ public class JResource extends JLoadableNode {
 	private transient List<JResource> subNodes = Collections.emptyList();
 	private transient ICodeInfo content = ICodeInfo.EMPTY;
 
-	public JResource(ResourceFile resFile, String name, JResType type) {
+	public JResource(@Nullable ResourceFile resFile, String name, JResType type) {
 		this(resFile, name, name, type);
 	}
 
-	public JResource(ResourceFile resFile, String name, String shortName, JResType type) {
+	public JResource(@Nullable ResourceFile resFile, String name, String shortName, JResType type) {
+		if (resFile == null && type == JResType.FILE) {
+			throw new IllegalArgumentException("Null resource file");
+		}
 		this.resFile = resFile;
 		this.name = name;
 		this.shortName = shortName;
@@ -129,6 +131,10 @@ public class JResource extends JLoadableNode {
 		return name;
 	}
 
+	public String getShortName() {
+		return shortName;
+	}
+
 	public JResType getType() {
 		return type;
 	}
@@ -152,26 +158,63 @@ public class JResource extends JLoadableNode {
 		}
 	}
 
+	/**
+	 * Collapse single-child DIR chains into one node with a slash-joined display name (GitHub-style).
+	 */
+	public static void mergeMiddleDirs(JResource root) {
+		mergeChildren(root.subNodes);
+	}
+
+	public static void mergeMiddleDirs(List<JResource> roots) {
+		mergeChildren(roots);
+	}
+
+	private static void mergeChildren(List<JResource> children) {
+		for (int i = 0; i < children.size(); i++) {
+			JResource sub = children.get(i);
+			JResource replaced = mergeChain(sub);
+			if (replaced != sub) {
+				children.set(i, replaced);
+			}
+			mergeChildren(replaced.subNodes);
+		}
+	}
+
+	private static JResource mergeChain(JResource node) {
+		if (node.type != JResType.DIR) {
+			return node;
+		}
+		List<JResource> merged = new LinkedList<>();
+		JResource deepestDir = node;
+		List<JResource> subs = deepestDir.subNodes;
+		while (subs.size() == 1 && subs.get(0).type == JResType.DIR) {
+			deepestDir = subs.get(0);
+			merged.add(deepestDir);
+			subs = deepestDir.subNodes;
+		}
+		if (!merged.isEmpty()) {
+			// merge the found single-child dir chain into the current node
+			merged.add(0, node);
+			String shortName = merged.stream().map(n -> n.shortName).collect(Collectors.joining("/"));
+			String name = merged.stream().map(n -> n.name).collect(Collectors.joining("/"));
+			JResource mergedNode = new JResource(node.resFile, name, shortName, JResType.DIR);
+			mergedNode.subNodes = deepestDir.subNodes;
+			return mergedNode;
+		}
+		return node;
+	}
+
+	@Override
+	public boolean hasContent() {
+		return resFile != null;
+	}
+
 	@Override
 	public @Nullable ContentPanel getContentPanel(TabbedPane tabbedPane) {
 		if (resFile == null) {
 			return null;
 		}
-		// TODO: allow to register custom viewers
-		switch (resFile.getType()) {
-			case IMG:
-				return new ImagePanel(tabbedPane, this);
-			case FONT:
-				return new FontPanel(tabbedPane, this);
-		}
-		if (getContentType() == ResourceContentType.CONTENT_BINARY) {
-			return new BinaryContentPanel(tabbedPane, this, false);
-		}
-		if (getSyntaxByExtension(resFile.getDeobfName()) != null) {
-			return new CodeContentPanel(tabbedPane, this);
-		}
-		// unknown file type, show both text and binary
-		return new BinaryContentPanel(tabbedPane, this, true);
+		return new ResourcePanel(tabbedPane, this);
 	}
 
 	@Override
@@ -208,7 +251,7 @@ public class JResource extends JLoadableNode {
 		}
 		if (rc.getDataType() == ResContainer.DataType.RES_TABLE) {
 			ICodeInfo codeInfo = loadCurrentSingleRes(rc);
-			List<JResource> nodes = ResTableHelper.buildTree(rc);
+			List<JResource> nodes = ResTableHelper.buildTree(this, rc);
 			sortResNodes(nodes);
 			subNodes = nodes;
 			UiUtils.uiRun(this::update);
@@ -296,6 +339,10 @@ public class JResource extends JLoadableNode {
 		}
 		String ext = name.substring(dot + 1);
 		return EXTENSION_TO_FILE_SYNTAX.get(ext);
+	}
+
+	public boolean hasSyntaxByExtension() {
+		return resFile != null && getSyntaxByExtension(resFile.getDeobfName()) != null;
 	}
 
 	@Override

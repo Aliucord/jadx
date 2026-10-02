@@ -13,6 +13,7 @@ import java.awt.event.KeyEvent;
 import java.awt.event.MouseListener;
 import java.awt.event.MouseMotionListener;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.swing.AbstractAction;
 import javax.swing.Action;
@@ -45,6 +46,7 @@ import org.slf4j.LoggerFactory;
 import jadx.api.ICodeInfo;
 import jadx.core.utils.StringUtils;
 import jadx.core.utils.exceptions.JadxRuntimeException;
+import jadx.gui.jobs.IBackgroundTask;
 import jadx.gui.settings.JadxSettings;
 import jadx.gui.treemodel.JClass;
 import jadx.gui.treemodel.JEditableNode;
@@ -71,6 +73,8 @@ public abstract class AbstractCodeArea extends RSyntaxTextArea {
 		if (tokenMakerFactory instanceof AbstractTokenMakerFactory) {
 			AbstractTokenMakerFactory atmf = (AbstractTokenMakerFactory) tokenMakerFactory;
 			atmf.putMapping(SYNTAX_STYLE_SMALI, "jadx.gui.ui.codearea.SmaliTokenMaker");
+			// use simple token maker instead default PlainTextTokenMaker to avoid parse errors
+			atmf.putMapping(SYNTAX_STYLE_NONE, "jadx.gui.ui.codearea.SimpleTokenMaker");
 		} else {
 			throw new JadxRuntimeException("Unexpected TokenMakerFactory instance: " + tokenMakerFactory.getClass());
 		}
@@ -81,7 +85,7 @@ public abstract class AbstractCodeArea extends RSyntaxTextArea {
 	protected ContentPanel contentPanel;
 	protected JNode node;
 
-	protected volatile boolean loaded = false;
+	private final AtomicBoolean loaded = new AtomicBoolean(false);
 
 	public AbstractCodeArea(ContentPanel contentPanel, JNode node) {
 		this.contentPanel = contentPanel;
@@ -158,17 +162,19 @@ public abstract class AbstractCodeArea extends RSyntaxTextArea {
 			public void actionPerformed(ActionEvent e) {
 				boolean wrap = !getLineWrap();
 				settings.setCodeAreaLineWrap(wrap);
+				settings.sync();
 				contentPanel.getTabbedPane().getTabs().forEach(v -> {
 					if (v instanceof AbstractCodeContentPanel) {
 						AbstractCodeArea codeArea = ((AbstractCodeContentPanel) v).getCodeArea();
-						setCodeAreaLineWrap(codeArea, wrap);
-						if (v instanceof ClassCodeContentPanel) {
-							codeArea = ((ClassCodeContentPanel) v).getSmaliCodeArea();
+						if (codeArea != null) {
 							setCodeAreaLineWrap(codeArea, wrap);
+							if (v instanceof ClassCodeContentPanel) {
+								codeArea = ((ClassCodeContentPanel) v).getSmaliCodeArea();
+								setCodeAreaLineWrap(codeArea, wrap);
+							}
 						}
 					}
 				});
-				settings.sync();
 			}
 		});
 		popupMenu.add(wrapItem);
@@ -230,12 +236,29 @@ public abstract class AbstractCodeArea extends RSyntaxTextArea {
 			@Override
 			public void keyPressed(KeyEvent e) {
 				if (e.getKeyCode() == KeyEvent.VK_C && UiUtils.isCtrlDown(e)) {
-					if (StringUtils.isEmpty(getSelectedText())) {
-						UiUtils.copyToClipboard(getWordUnderCaret());
-					}
+					UiUtils.copyToClipboard(getSelectedTokenOrWord());
 				}
 			}
 		});
+	}
+
+	/**
+	 * If the user has selected an individual word, for example by clicking and dragging
+	 * the mouse, then get that. Otherwise get the token underneath the cursor.
+	 * This is useful when the token is a string or comment and we want to control or copy
+	 * the word rather than the whole thing.
+	 *
+	 * @return The word or the token text
+	 */
+	public @Nullable String getSelectedTokenOrWord() {
+		final String rc = getSelectedText();
+		if (rc == null) {
+			return getWordUnderCaret();
+		}
+		if (StringUtils.isEmpty(rc)) {
+			return getWordUnderCaret();
+		}
+		return rc;
 	}
 
 	private void addSaveActions(JEditableNode node) {
@@ -252,7 +275,7 @@ public abstract class AbstractCodeArea extends RSyntaxTextArea {
 
 	private void addChangeUpdates(JEditableNode editableNode) {
 		getDocument().addDocumentListener(new DocumentUpdateListener(ev -> {
-			if (loaded) {
+			if (loaded.get()) {
 				editableNode.setChanged(true);
 			}
 		}));
@@ -347,15 +370,31 @@ public abstract class AbstractCodeArea extends RSyntaxTextArea {
 
 	public abstract ICodeInfo getCodeInfo();
 
+	public void load() {
+		if (isLoaded()) {
+			return;
+		}
+		IBackgroundTask loadTask = getLoadTask();
+		contentPanel.getMainWindow().getBackgroundExecutor().execute(loadTask);
+	}
+
 	/**
 	 * Implement in this method the code that loads and sets the content to be displayed
 	 * Call `setLoaded()` on load finish.
 	 */
-	public abstract void load();
+	public abstract IBackgroundTask getLoadTask();
 
 	public void setLoaded() {
-		this.loaded = true;
+		this.loaded.set(true);
 		discardAllEdits(); // disable 'undo' action to empty state (before load)
+	}
+
+	public void setUnLoaded() {
+		this.loaded.set(false);
+	}
+
+	public boolean isLoaded() {
+		return loaded.get();
 	}
 
 	/**
@@ -376,10 +415,10 @@ public abstract class AbstractCodeArea extends RSyntaxTextArea {
 	public static void loadCommonSettings(MainWindow mainWindow, RSyntaxTextArea area) {
 		JadxSettings settings = mainWindow.getSettings();
 		mainWindow.getEditorThemeManager().apply(area);
-		area.setFont(settings.getFont());
+		area.setFont(settings.getCodeFont());
 		Gutter gutter = RSyntaxUtilities.getGutter(area);
 		if (gutter != null) {
-			gutter.setLineNumberFont(settings.getFont());
+			gutter.setLineNumberFont(settings.getCodeFont());
 		}
 	}
 
@@ -428,11 +467,16 @@ public abstract class AbstractCodeArea extends RSyntaxTextArea {
 	 * @param str - if null -> reset current highlights
 	 */
 	private void highlightAllMatches(@Nullable String str) {
-		SearchContext context = new SearchContext(str);
-		context.setMarkAll(true);
-		context.setMatchCase(true);
-		context.setWholeWord(true);
-		SearchEngine.markAll(this, context);
+		try {
+			SearchContext context = new SearchContext(str);
+			context.setMarkAll(true);
+			context.setMatchCase(true);
+			context.setWholeWord(true);
+			SearchEngine.markAll(this, context);
+		} catch (Throwable e) {
+			// syntax parsing can fail for incorrect code
+			LOG.debug("Search highlight failed", e);
+		}
 	}
 
 	public @Nullable JumpPosition getCurrentPosition() {

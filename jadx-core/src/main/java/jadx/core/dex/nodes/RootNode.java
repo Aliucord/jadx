@@ -4,8 +4,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import org.jetbrains.annotations.NotNull;
@@ -33,6 +36,7 @@ import jadx.api.plugins.pass.types.JadxPreparePass;
 import jadx.core.Jadx;
 import jadx.core.ProcessClass;
 import jadx.core.clsp.ClspGraph;
+import jadx.core.dex.attributes.AttrNode;
 import jadx.core.dex.attributes.AttributeStorage;
 import jadx.core.dex.info.ClassInfo;
 import jadx.core.dex.info.ConstStorage;
@@ -42,6 +46,7 @@ import jadx.core.dex.info.MethodInfo;
 import jadx.core.dex.info.PackageInfo;
 import jadx.core.dex.instructions.args.ArgType;
 import jadx.core.dex.nodes.utils.MethodUtils;
+import jadx.core.dex.nodes.utils.SelectFromDuplicates;
 import jadx.core.dex.nodes.utils.TypeUtils;
 import jadx.core.dex.visitors.DepthTraversal;
 import jadx.core.dex.visitors.IDexTreeVisitor;
@@ -62,7 +67,7 @@ import jadx.core.xmlgen.ResourceStorage;
 import jadx.core.xmlgen.entry.ResourceEntry;
 import jadx.core.xmlgen.entry.ValuesParser;
 
-public class RootNode {
+public class RootNode extends AttrNode {
 	private static final Logger LOG = LoggerFactory.getLogger(RootNode.class);
 
 	private final JadxArgs args;
@@ -149,7 +154,7 @@ public class RootNode {
 	public void finishClassLoad() {
 		if (classes.size() != clsMap.size()) {
 			// class name duplication detected
-			markDuplicatedClasses(classes);
+			fixDuplicatedClasses();
 		}
 		classes = new ArrayList<>(clsMap.values());
 
@@ -159,7 +164,7 @@ public class RootNode {
 		LOG.info("Loaded classes: {}, methods: {}, instructions: {}", classes.size(), mthCount, insnsCount);
 
 		// sort classes by name, expect top classes before inner
-		classes.sort(Comparator.comparing(ClassNode::getFullName));
+		classes.sort(Comparator.comparing(ClassNode::getRawName));
 
 		if (args.isMoveInnerClasses()) {
 			// detect and move inner classes
@@ -191,24 +196,30 @@ public class RootNode {
 		}
 	}
 
-	private static void markDuplicatedClasses(List<ClassNode> classes) {
+	private void fixDuplicatedClasses() {
 		classes.stream()
 				.collect(Collectors.groupingBy(ClassNode::getClassInfo))
 				.entrySet()
 				.stream()
 				.filter(entry -> entry.getValue().size() > 1)
 				.forEach(entry -> {
-					List<String> sources = Utils.collectionMap(entry.getValue(), ClassNode::getInputFileName);
-					LOG.warn("Found duplicated class: {}, count: {}. Only one will be loaded!\n  {}",
-							entry.getKey(), entry.getValue().size(), String.join("\n  ", sources));
-					entry.getValue().forEach(cls -> {
-						String thisSource = cls.getInputFileName();
-						String otherSourceStr = sources.stream()
-								.filter(s -> !s.equals(thisSource))
-								.sorted()
-								.collect(Collectors.joining("\n  "));
-						cls.addWarnComment("Classes with same name are omitted:\n  " + otherSourceStr + '\n');
-					});
+					ClassInfo clsInfo = entry.getKey();
+					List<ClassNode> dupClsList = entry.getValue();
+					ClassNode selectedCls = SelectFromDuplicates.process(dupClsList);
+
+					// keep only selected class in classes maps
+					clsMap.put(clsInfo, selectedCls);
+					rawClsMap.put(selectedCls.getRawName(), selectedCls);
+
+					String selectedSource = selectedCls.getInputFileName();
+					String sources = dupClsList.stream()
+							.map(ClassNode::getInputFileName)
+							.sorted()
+							.collect(Collectors.joining("\n  "));
+					LOG.warn("Found duplicated class: {}, count: {}, sources:"
+							+ "\n  {}\n Keep class with source: {}, others will be removed.",
+							clsInfo, dupClsList.size(), sources, selectedSource);
+					selectedCls.addWarnComment("Classes with same name are omitted, all sources:\n  " + sources + '\n');
 				});
 	}
 
@@ -309,10 +320,8 @@ public class RootNode {
 			ClassInfo clsInfo = cls.getClassInfo();
 			ClassNode parent = resolveParentClass(clsInfo);
 			if (parent == null) {
-				clsMap.remove(clsInfo);
-				clsInfo.notInner(this);
-				clsMap.put(clsInfo, cls);
 				updated.add(cls);
+				cls.notInner();
 			} else {
 				parent.addInnerClass(cls);
 			}
@@ -323,7 +332,6 @@ public class RootNode {
 				innerCls.getClassInfo().updateNames(this);
 			}
 		}
-		classes.forEach(ClassNode::updateParentClass);
 		for (PackageNode pkg : packages) {
 			pkg.getClasses().removeIf(cls -> cls.getClassInfo().isInner());
 		}
@@ -344,6 +352,19 @@ public class RootNode {
 		if (args.isRunDebugChecks()) {
 			preDecompilePasses = DebugChecks.insertPasses(preDecompilePasses);
 			processClasses = new ProcessClass(DebugChecks.insertPasses(processClasses.getPasses()));
+		}
+		List<String> disabledPasses = args.getDisabledPasses();
+		if (!disabledPasses.isEmpty()) {
+			Set<String> disabledSet = new HashSet<>(disabledPasses);
+			Predicate<IDexTreeVisitor> filter = p -> {
+				if (disabledSet.contains(p.getName())) {
+					LOG.debug("Disable pass: {}", p.getName());
+					return true;
+				}
+				return false;
+			};
+			preDecompilePasses.removeIf(filter);
+			processClasses.getPasses().removeIf(filter);
 		}
 	}
 

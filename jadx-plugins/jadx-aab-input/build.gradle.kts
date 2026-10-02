@@ -5,14 +5,10 @@ plugins {
 dependencies {
 	compileOnly(project(":jadx-core"))
 
-	implementation("com.android.tools.build:aapt2-proto:8.11.1-12782657")
-	implementation("com.google.protobuf:protobuf-java") {
-		version {
-			require("3.25.3") // version 4 conflict with `aapt2-proto`
-		}
-	}
+	implementation(libs.aapt2.proto)
+	implementation(libs.protobuf.java)
 
-	implementation("com.android.tools.build:bundletool:1.18.1") {
+	implementation(libs.bundletool) {
 		// All of this is unnecessary for parsing BundleConfig.pb except for protobuf
 		exclude(group = "com.android.tools.build")
 		exclude(group = "com.google.protobuf")

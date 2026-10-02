@@ -72,7 +72,7 @@ For Windows, you can download it from [oracle.com](https://www.oracle.com/java/t
 You can use jadx in your java projects, check details on [wiki page](https://github.com/skylot/jadx/wiki/Use-jadx-as-a-library)
 
 ### Build from source
-JDK 11 or higher must be installed:
+JDK 17 or higher must be installed:
 ```
 git clone https://github.com/skylot/jadx.git
 cd jadx
@@ -167,13 +167,23 @@ options:
   --fs-case-sensitive                           - treat filesystem as case sensitive, false by default
   --cfg                                         - save methods control flow graph to dot file
   --raw-cfg                                     - save methods control flow graph (use raw instructions)
+  --call-graph                                  - save app call graph in format: 'dot' or 'json', default: none
   -f, --fallback                                - set '--decompilation-mode' to 'fallback' (deprecated)
   --use-dx                                      - use dx/d8 to convert java bytecode
   --comments-level                              - set code comments level, values: error, warn, info, debug, user-only, none, default: info
   --log-level                                   - set log level, values: quiet, progress, error, warn, info, debug, default: progress
   -v, --verbose                                 - verbose output (set --log-level to DEBUG)
   -q, --quiet                                   - turn off output (set --log-level to QUIET)
-  --disable-plugins                             - comma separated list of plugin ids to disable, default:
+  --disable-plugins                             - comma separated list of plugin ids to disable
+  --config <config-ref>                         - load configuration from file, <config-ref> can be:
+                                                   path to '.json' file
+                                                   short name - uses file with this name from config directory
+                                                   'none' - to disable config loading
+  --save-config <config-ref>                    - save current options into configuration file and exit, <config-ref> can be:
+                                                   empty - for default config
+                                                   path to '.json' file
+                                                   short name - file will be saved in config directory
+  --print-files                                 - print files and directories used by jadx (config, cache, temp)
   --version                                     - print jadx version
   -h, --help                                    - print this help
 
@@ -194,7 +204,7 @@ Plugin options (-P<name>=<value>):
   kotlin-smap: Use kotlin.SourceDebugExtension annotation for rename class alias
     - kotlin-smap.class-alias-source-dbg        - rename class alias from SourceDebugExtension, values: [yes, no], default: no
   rename-mappings: various mappings support
-    - rename-mappings.format                    - mapping format, values: [AUTO, TINY_FILE, TINY_2_FILE, ENIGMA_FILE, ENIGMA_DIR, SRG_FILE, XSRG_FILE, JAM_FILE, CSRG_FILE, TSRG_FILE, TSRG_2_FILE, PROGUARD_FILE, INTELLIJ_MIGRATION_MAP_FILE, RECAF_SIMPLE_FILE, JOBF_FILE], default: AUTO
+    - rename-mappings.format                    - mapping format, values: [AUTO, TINY_FILE, TINY_2_FILE, ENIGMA_FILE, ENIGMA_DIR, PROGUARD_FILE, SRG_FILE, XSRG_FILE, JAM_FILE, CSRG_FILE, TSRG_FILE, TSRG_2_FILE, INTELLIJ_MIGRATION_MAP_FILE, RECAF_SIMPLE_FILE, JOBF_FILE], default: AUTO
     - rename-mappings.invert                    - invert mapping on load, values: [yes, no], default: no
   smali-input: Load .smali files
     - smali-input.api-level                     - Android API level, default: 27
@@ -202,6 +212,7 @@ Plugin options (-P<name>=<value>):
 Environment variables:
   JADX_DISABLE_XML_SECURITY - set to 'true' to disable all security checks for XML files
   JADX_DISABLE_ZIP_SECURITY - set to 'true' to disable all security checks for zip files
+  JADX_DISABLE_ALL_SECURITY_FLAGS - set to 'true' to disable all security flags (xml, string, app package)
   JADX_ZIP_MAX_ENTRIES_COUNT - maximum allowed number of entries in zip files (default: 100 000)
   JADX_CONFIG_DIR - custom config directory, using system by default
   JADX_CACHE_DIR - custom cache directory, using system by default

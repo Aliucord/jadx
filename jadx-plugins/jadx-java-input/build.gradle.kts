@@ -6,7 +6,7 @@ dependencies {
 	api(project(":jadx-core"))
 
 	// show bytecode disassemble
-	implementation("io.github.skylot:raung-disasm:0.1.1")
+	implementation(libs.raung.disasm)
 
 	testImplementation(project(":jadx-core"))
 }

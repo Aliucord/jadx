@@ -1,131 +1,109 @@
 package jadx.gui.ui.action;
 
-import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 import javax.swing.ImageIcon;
 
+import org.jetbrains.annotations.Nullable;
+
+import jadx.core.utils.Utils;
 import jadx.gui.utils.NLS;
 import jadx.gui.utils.UiUtils;
 import jadx.gui.utils.shortcut.Shortcut;
 
-import static jadx.gui.ui.action.ActionCategory.*;
+import static jadx.gui.ui.action.ActionCategory.CODE_AREA;
+import static jadx.gui.ui.action.ActionCategory.HEX_VIEWER_MENU;
+import static jadx.gui.ui.action.ActionCategory.MENU_TOOLBAR;
+import static jadx.gui.ui.action.ActionCategory.PLUGIN_SCRIPT;
+import static jadx.gui.utils.UiUtils.ctrlButton;
+import static jadx.gui.utils.shortcut.Shortcut.keyboard;
+import static java.awt.event.InputEvent.ALT_DOWN_MASK;
+import static java.awt.event.InputEvent.SHIFT_DOWN_MASK;
 
 public enum ActionModel {
-	ABOUT(MENU_TOOLBAR, "menu.about", "menu.about", "ui/showInfos",
-			Shortcut.keyboard(KeyEvent.VK_F1)),
-	OPEN(MENU_TOOLBAR, "file.open_action", "file.open_action", "ui/openDisk",
-			Shortcut.keyboard(KeyEvent.VK_O, KeyEvent.CTRL_DOWN_MASK)),
-	OPEN_PROJECT(MENU_TOOLBAR, "file.open_project", "file.open_project", "ui/projectDirectory",
-			Shortcut.keyboard(KeyEvent.VK_O, InputEvent.SHIFT_DOWN_MASK | UiUtils.ctrlButton())),
-	ADD_FILES(MENU_TOOLBAR, "file.add_files_action", "file.add_files_action", "ui/addFile",
-			Shortcut.none()),
-	NEW_PROJECT(MENU_TOOLBAR, "file.new_project", "file.new_project", "ui/newFolder",
-			Shortcut.none()),
-	SAVE_PROJECT(MENU_TOOLBAR, "file.save_project", "file.save_project", null,
-			Shortcut.none()),
-	SAVE_PROJECT_AS(MENU_TOOLBAR, "file.save_project_as", "file.save_project_as", null,
-			Shortcut.none()),
-	RELOAD(MENU_TOOLBAR, "file.reload", "file.reload", "ui/refresh",
-			Shortcut.keyboard(KeyEvent.VK_F5)),
-	LIVE_RELOAD(MENU_TOOLBAR, "file.live_reload", "file.live_reload_desc", null,
-			Shortcut.keyboard(KeyEvent.VK_F5, InputEvent.SHIFT_DOWN_MASK)),
-	SAVE_ALL(MENU_TOOLBAR, "file.save_all", "file.save_all", "ui/menu-saveall",
-			Shortcut.keyboard(KeyEvent.VK_E, UiUtils.ctrlButton())),
-	EXPORT(MENU_TOOLBAR, "file.export", "file.export", "ui/export",
-			Shortcut.keyboard(KeyEvent.VK_E, UiUtils.ctrlButton() | KeyEvent.SHIFT_DOWN_MASK)),
-	PREFS(MENU_TOOLBAR, "menu.preferences", "menu.preferences", "ui/settings",
-			Shortcut.keyboard(KeyEvent.VK_P, UiUtils.ctrlButton() | KeyEvent.SHIFT_DOWN_MASK)),
-	EXIT(MENU_TOOLBAR, "file.exit", "file.exit", "ui/exit",
-			Shortcut.none()),
-	SYNC(MENU_TOOLBAR, "menu.sync", "menu.sync", "ui/locate",
-			Shortcut.keyboard(KeyEvent.VK_T, UiUtils.ctrlButton())),
-	TEXT_SEARCH(MENU_TOOLBAR, "menu.text_search", "menu.text_search", "ui/find",
-			Shortcut.keyboard(KeyEvent.VK_F, UiUtils.ctrlButton() | KeyEvent.SHIFT_DOWN_MASK)),
-	CLASS_SEARCH(MENU_TOOLBAR, "menu.class_search", "menu.class_search", "ui/ejbFinderMethod",
-			Shortcut.keyboard(KeyEvent.VK_N, UiUtils.ctrlButton())),
-	COMMENT_SEARCH(MENU_TOOLBAR, "menu.comment_search", "menu.comment_search", "ui/usagesFinder",
-			Shortcut.keyboard(KeyEvent.VK_SEMICOLON, UiUtils.ctrlButton() | KeyEvent.SHIFT_DOWN_MASK)),
-	GO_TO_MAIN_ACTIVITY(MENU_TOOLBAR, "menu.go_to_main_activity", "menu.go_to_main_activity", "ui/home",
-			Shortcut.keyboard(KeyEvent.VK_M, UiUtils.ctrlButton() | KeyEvent.SHIFT_DOWN_MASK)),
-	GO_TO_APPLICATION(MENU_TOOLBAR, "menu.go_to_application", "menu.go_to_application", "ui/application",
-			Shortcut.keyboard(KeyEvent.VK_A, UiUtils.ctrlButton() | KeyEvent.SHIFT_DOWN_MASK)),
-	GO_TO_ANDROID_MANIFEST(MENU_TOOLBAR, "menu.go_to_android_manifest", "menu.go_to_android_manifest", "ui/androidManifest",
-			Shortcut.none()),
-	PREVIEW_TAB(MENU_TOOLBAR, "menu.enable_preview_tab", "menu.enable_preview_tab", "ui/editorPreview",
-			Shortcut.none()),
-	DECOMPILE_ALL(MENU_TOOLBAR, "menu.decompile_all", "menu.decompile_all", "ui/runAll",
-			Shortcut.none()),
-	RESET_CACHE(MENU_TOOLBAR, "menu.reset_cache", "menu.reset_cache", "ui/reset",
-			Shortcut.none()),
-	DEOBF(MENU_TOOLBAR, "menu.deobfuscation", "preferences.deobfuscation", "ui/helmChartLock",
-			Shortcut.keyboard(KeyEvent.VK_D, UiUtils.ctrlButton() | KeyEvent.ALT_DOWN_MASK)),
-	SHOW_LOG(MENU_TOOLBAR, "menu.log", "menu.log", "ui/logVerbose",
-			Shortcut.keyboard(KeyEvent.VK_L, UiUtils.ctrlButton() | KeyEvent.SHIFT_DOWN_MASK)),
-	CREATE_DESKTOP_ENTRY(MENU_TOOLBAR, "menu.create_desktop_entry", "menu.create_desktop_entry", null, Shortcut.none()),
-	BACK(MENU_TOOLBAR, "nav.back", "nav.back", "ui/left",
-			Shortcut.keyboard(KeyEvent.VK_ESCAPE)),
-	BACK_V(MENU_TOOLBAR, "nav.back", "nav.back", "ui/left",
-			Shortcut.none()),
-	FORWARD(MENU_TOOLBAR, "nav.forward", "nav.forward", "ui/right",
-			Shortcut.keyboard(KeyEvent.VK_RIGHT, KeyEvent.ALT_DOWN_MASK)),
-	FORWARD_V(MENU_TOOLBAR, "nav.forward", "nav.forward", "ui/right",
-			Shortcut.none()),
-	QUARK(MENU_TOOLBAR, "menu.quark", "menu.quark", "ui/quark",
-			Shortcut.none()),
-	OPEN_DEVICE(MENU_TOOLBAR, "debugger.process_selector", "debugger.process_selector", "ui/startDebugger",
-			Shortcut.none()),
+	ABOUT(MENU_TOOLBAR, NLS.str("menu.about"), null, "ui/showInfos", keyboard(KeyEvent.VK_F1)),
+	OPEN(MENU_TOOLBAR, NLS.str("file.open_action"), null, "ui/openDisk", keyboard(KeyEvent.VK_O, ctrlButton())),
+	OPEN_PROJECT(MENU_TOOLBAR, NLS.str("file.open_project"), null, "ui/projectDirectory",
+			keyboard(KeyEvent.VK_O, SHIFT_DOWN_MASK | ctrlButton())),
+	ADD_FILES(MENU_TOOLBAR, NLS.str("file.add_files_action"), null, "ui/addFile", null),
+	NEW_PROJECT(MENU_TOOLBAR, NLS.str("file.new_project"), null, "ui/newFolder", null),
+	SAVE_PROJECT(MENU_TOOLBAR, NLS.str("file.save_project"), null, null, null),
+	SAVE_PROJECT_AS(MENU_TOOLBAR, NLS.str("file.save_project_as"), null, null, null),
+	RELOAD(MENU_TOOLBAR, NLS.str("file.reload"), null, "ui/refresh", keyboard(KeyEvent.VK_F5)),
+	LIVE_RELOAD(MENU_TOOLBAR, NLS.str("file.live_reload"), NLS.str("file.live_reload_desc"), null,
+			keyboard(KeyEvent.VK_F5, SHIFT_DOWN_MASK)),
+	SAVE_ALL(MENU_TOOLBAR, NLS.str("file.save_all"), null, "ui/menu-saveall", keyboard(KeyEvent.VK_E, ctrlButton())),
+	EXPORT(MENU_TOOLBAR, NLS.str("file.export"), null, "ui/export", keyboard(KeyEvent.VK_E, ctrlButton() | SHIFT_DOWN_MASK)),
+	PREFS(MENU_TOOLBAR, NLS.str("menu.preferences"), null, "ui/settings", keyboard(KeyEvent.VK_P, ctrlButton() | SHIFT_DOWN_MASK)),
+	EXIT(MENU_TOOLBAR, NLS.str("file.exit"), null, "ui/exit", null),
+	SYNC(MENU_TOOLBAR, NLS.str("menu.sync"), null, "ui/locate", keyboard(KeyEvent.VK_T, ctrlButton())),
+	TEXT_SEARCH(MENU_TOOLBAR, NLS.str("menu.text_search"), null, "ui/find", keyboard(KeyEvent.VK_F, ctrlButton() | SHIFT_DOWN_MASK)),
 
-	FIND_USAGE(CODE_AREA, "popup.find_usage", "popup.find_usage", null,
-			Shortcut.keyboard(KeyEvent.VK_X)),
-	FIND_USAGE_PLUS(CODE_AREA, "popup.usage_dialog_plus", "popup.usage_dialog_plus", null,
-			Shortcut.keyboard(KeyEvent.VK_C)),
-	GOTO_DECLARATION(CODE_AREA, "popup.go_to_declaration", "popup.go_to_declaration", null,
-			Shortcut.keyboard(KeyEvent.VK_D)),
-	CODE_COMMENT(CODE_AREA, "popup.add_comment", "popup.add_comment", null,
-			Shortcut.keyboard(KeyEvent.VK_SEMICOLON)),
-	CODE_COMMENT_SEARCH(CODE_AREA, "popup.search_comment", "popup.search_comment", null,
-			Shortcut.keyboard(KeyEvent.VK_SEMICOLON, UiUtils.ctrlButton())),
-	CODE_RENAME(CODE_AREA, "popup.rename", "popup.rename", null,
-			Shortcut.keyboard(KeyEvent.VK_N)),
-	FRIDA_COPY(CODE_AREA, "popup.frida", "popup.frida", null,
-			Shortcut.keyboard(KeyEvent.VK_F)),
-	XPOSED_COPY(CODE_AREA, "popup.xposed", "popup.xposed", null,
-			Shortcut.keyboard(KeyEvent.VK_Y)),
-	JSON_PRETTIFY(CODE_AREA, "popup.json_prettify", "popup.json_prettify", null,
-			Shortcut.none()),
+	CLASS_SEARCH(MENU_TOOLBAR, NLS.str("menu.class_search"), null, "ui/ejbFinderMethod", keyboard(KeyEvent.VK_N, ctrlButton())),
+	COMMENT_SEARCH(MENU_TOOLBAR, NLS.str("menu.comment_search"), null, "ui/usagesFinder",
+			keyboard(KeyEvent.VK_SEMICOLON, ctrlButton() | SHIFT_DOWN_MASK)),
+	GO_TO_MAIN_ACTIVITY(MENU_TOOLBAR, NLS.str("menu.go_to_main_activity"), null, "ui/home",
+			keyboard(KeyEvent.VK_M, ctrlButton() | SHIFT_DOWN_MASK)),
+	GO_TO_APPLICATION(MENU_TOOLBAR, NLS.str("menu.go_to_application"), null, "ui/application",
+			keyboard(KeyEvent.VK_A, ctrlButton() | SHIFT_DOWN_MASK)),
+	GO_TO_ANDROID_MANIFEST(MENU_TOOLBAR, NLS.str("menu.go_to_android_manifest"), null, "ui/androidManifest", null),
+	PREVIEW_TAB(MENU_TOOLBAR, NLS.str("menu.enable_preview_tab"), null, "ui/editorPreview", null),
+	DECOMPILE_ALL(MENU_TOOLBAR, NLS.str("menu.decompile_all"), null, "ui/runAll", null),
+	RESET_CACHE(MENU_TOOLBAR, NLS.str("menu.reset_cache"), null, "ui/reset", null),
+	DEOBF(MENU_TOOLBAR, NLS.str("menu.deobfuscation"), null, "ui/helmChartLock", keyboard(KeyEvent.VK_D, ctrlButton() | ALT_DOWN_MASK)),
+	SHOW_LOG(MENU_TOOLBAR, NLS.str("menu.log"), null, "ui/logVerbose", keyboard(KeyEvent.VK_L, ctrlButton() | SHIFT_DOWN_MASK)),
+	CREATE_DESKTOP_ENTRY(MENU_TOOLBAR, NLS.str("menu.create_desktop_entry"), null, null, null),
+	BACK(MENU_TOOLBAR, NLS.str("nav.back"), null, "ui/left", keyboard(KeyEvent.VK_ESCAPE)),
+	BACK_V(MENU_TOOLBAR, NLS.str("action.variant", NLS.str("nav.back")), null, "ui/left", null),
+	FORWARD(MENU_TOOLBAR, NLS.str("nav.forward"), null, "ui/right", keyboard(KeyEvent.VK_RIGHT, ALT_DOWN_MASK)),
+	FORWARD_V(MENU_TOOLBAR, NLS.str("action.variant", NLS.str("nav.forward")), null, "ui/right", null),
+	QUARK(MENU_TOOLBAR, NLS.str("menu.quark"), null, "ui/quark", null),
+	OPEN_DEVICE(MENU_TOOLBAR, NLS.str("debugger.process_selector"), null, "ui/startDebugger", null),
 
-	SCRIPT_RUN(PLUGIN_SCRIPT, "script.run", "script.run", "ui/run",
-			Shortcut.keyboard(KeyEvent.VK_F8)),
-	SCRIPT_SAVE(PLUGIN_SCRIPT, "script.save", "script.save", "ui/menu-saveall",
-			Shortcut.keyboard(KeyEvent.VK_S, UiUtils.ctrlButton())),
-	SCRIPT_AUTO_COMPLETE(PLUGIN_SCRIPT, "script.auto_complete", "script.auto_complete", null,
-			Shortcut.keyboard(KeyEvent.VK_SPACE, UiUtils.ctrlButton())),
+	FIND_USAGE(CODE_AREA, NLS.str("popup.find_usage"), null, null, keyboard(KeyEvent.VK_X)),
+	FIND_USAGE_PLUS(CODE_AREA, NLS.str("popup.usage_dialog_plus"), null, null, keyboard(KeyEvent.VK_C)),
+	GOTO_DECLARATION(CODE_AREA, NLS.str("popup.go_to_declaration"), null, null, keyboard(KeyEvent.VK_D)),
+	CONVERT_NUMBER(CODE_AREA, NLS.str("popup.convert_number"), null, null, null),
+	VIEW_CLASS_INHERITANCE_GRAPH(CODE_AREA, NLS.str("popup.view_class_graph"), NLS.str("popup.view_class_graph_description"), null, null),
+	VIEW_CLASS_METHOD_GRAPH(CODE_AREA, NLS.str("popup.view_class_method_graph"), NLS.str("popup.view_class_method_graph_description"), null,
+			null),
+	VIEW_CALL_GRAPH(CODE_AREA, NLS.str("popup.view_call_graph"), NLS.str("popup.view_call_graph_description"), null, null),
+	VIEW_CONTROL_FLOW_GRAPH(CODE_AREA, NLS.str("popup.view_cfg"), null, null, null),
 
-	HEX_VIEWER_SHOW_INSPECTOR(HEX_VIEWER_MENU, "hex_viewer.show_inspector", "hex_viewer.show_inspector",
-			null, Shortcut.none()),
-	HEX_VIEWER_CHANGE_ENCODING(HEX_VIEWER_MENU, "hex_viewer.change_encoding", "hex_viewer.change_encoding",
-			null, Shortcut.none()),
-	HEX_VIEWER_GO_TO_ADDRESS(HEX_VIEWER_MENU, "hex_viewer.goto_address", "hex_viewer.goto_address",
-			null, Shortcut.keyboard(KeyEvent.VK_J, UiUtils.ctrlButton())),
-	HEX_VIEWER_FIND(HEX_VIEWER_MENU, "hex_viewer.find", "hex_viewer.find",
-			null, Shortcut.keyboard(KeyEvent.VK_F, UiUtils.ctrlButton()));
+	CODE_COMMENT(CODE_AREA, NLS.str("popup.add_comment"), null, null, keyboard(KeyEvent.VK_SEMICOLON)),
+	CODE_COMMENT_SEARCH(CODE_AREA, NLS.str("popup.search_comment"), null, null, keyboard(KeyEvent.VK_SEMICOLON, ctrlButton())),
+	CODE_RENAME(CODE_AREA, NLS.str("popup.rename"), null, null, keyboard(KeyEvent.VK_N)),
+	FRIDA_COPY(CODE_AREA, NLS.str("popup.frida"), null, null, keyboard(KeyEvent.VK_F)),
+	XPOSED_COPY(CODE_AREA, NLS.str("popup.xposed"), null, null, keyboard(KeyEvent.VK_Y)),
+	COPY_REFERENCE(CODE_AREA, NLS.str("popup.copy_reference"), null, null, keyboard(KeyEvent.VK_R)),
+	JSON_PRETTIFY(CODE_AREA, NLS.str("popup.json_prettify"), null, null, null),
+
+	SCRIPT_RUN(PLUGIN_SCRIPT, NLS.str("script.run"), null, "ui/run", keyboard(KeyEvent.VK_F8)),
+	SCRIPT_SAVE(PLUGIN_SCRIPT, NLS.str("script.save"), null, "ui/menu-saveall", keyboard(KeyEvent.VK_S, ctrlButton())),
+	SCRIPT_AUTO_COMPLETE(PLUGIN_SCRIPT, NLS.str("script.auto_complete"), null, null, keyboard(KeyEvent.VK_SPACE, ctrlButton())),
+
+	HEX_VIEWER_SHOW_INSPECTOR(HEX_VIEWER_MENU, NLS.str("hex_viewer.show_inspector"), null, null, null),
+	HEX_VIEWER_CHANGE_ENCODING(HEX_VIEWER_MENU, NLS.str("hex_viewer.change_encoding"), null, null, null),
+	HEX_VIEWER_GO_TO_ADDRESS(HEX_VIEWER_MENU, NLS.str("hex_viewer.goto_address"), null, null, keyboard(KeyEvent.VK_J, ctrlButton())),
+	HEX_VIEWER_FIND(HEX_VIEWER_MENU, NLS.str("hex_viewer.find"), null, null, keyboard(KeyEvent.VK_F, ctrlButton()));
 
 	private final ActionCategory category;
-	private final String nameRes;
-	private final String descRes;
-	private final String iconPath;
+	private final String name;
+	private final String desc;
+	private final @Nullable ImageIcon icon;
 	private final Shortcut defaultShortcut;
 
-	ActionModel(ActionCategory category, String nameRes, String descRes, String iconPath, Shortcut defaultShortcut) {
-		this.category = category;
-		this.nameRes = nameRes;
-		this.descRes = descRes;
-		this.iconPath = iconPath;
-		this.defaultShortcut = defaultShortcut;
+	ActionModel(ActionCategory category, String name, @Nullable String desc, @Nullable String iconPath,
+			@Nullable Shortcut defaultShortcut) {
+		this.category = Objects.requireNonNull(category);
+		this.name = Objects.requireNonNull(name);
+		this.desc = Utils.getOrElse(desc, name);
+		this.icon = iconPath != null ? UiUtils.openSvgIcon(iconPath) : null;
+		this.defaultShortcut = defaultShortcut != null ? defaultShortcut : Shortcut.none();
 	}
 
 	public static List<ActionModel> select(ActionCategory category) {
@@ -139,28 +117,15 @@ public enum ActionModel {
 	}
 
 	public String getName() {
-		if (nameRes != null) {
-			String name = NLS.str(nameRes);
-			if (name().endsWith("_V")) {
-				name = NLS.str("action.variant", name);
-			}
-			return name;
-		}
-		return null;
+		return name;
 	}
 
 	public String getDescription() {
-		if (descRes != null) {
-			return NLS.str(descRes);
-		}
-		return null;
+		return desc;
 	}
 
-	public ImageIcon getIcon() {
-		if (iconPath != null) {
-			return UiUtils.openSvgIcon(iconPath);
-		}
-		return null;
+	public @Nullable ImageIcon getIcon() {
+		return icon;
 	}
 
 	public Shortcut getDefaultShortcut() {

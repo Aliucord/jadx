@@ -23,9 +23,9 @@ public final class ClassInfo implements Comparable<ClassInfo> {
 	@Nullable
 	private ClassAliasInfo alias;
 
-	private ClassInfo(RootNode root, ArgType type) {
+	private ClassInfo(RootNode root, ArgType type, boolean canBeInner) {
 		this.type = type;
-		splitAndApplyNames(root, type, root.getArgs().isMoveInnerClasses());
+		splitAndApplyNames(root, type, canBeInner);
 	}
 
 	public static ClassInfo fromType(RootNode root, ArgType type) {
@@ -34,12 +34,17 @@ public final class ClassInfo implements Comparable<ClassInfo> {
 		if (cls != null) {
 			return cls;
 		}
-		ClassInfo newClsInfo = new ClassInfo(root, clsType);
+		boolean canBeInner = root.getArgs().isMoveInnerClasses();
+		ClassInfo newClsInfo = new ClassInfo(root, clsType, canBeInner);
 		return root.getInfoStorage().putCls(newClsInfo);
 	}
 
 	public static ClassInfo fromName(RootNode root, String clsName) {
 		return fromType(root, ArgType.object(clsName));
+	}
+
+	public static ClassInfo fromNameWithoutCache(RootNode root, String fullClsName, boolean canBeInner) {
+		return new ClassInfo(root, ArgType.object(fullClsName), canBeInner);
 	}
 
 	private static ArgType checkClassType(ArgType type) {
@@ -209,9 +214,12 @@ public final class ClassInfo implements Comparable<ClassInfo> {
 	}
 
 	public String getAliasFullPath() {
-		return getAliasPkg().replace('.', File.separatorChar)
-				+ File.separatorChar
-				+ getAliasNameWithoutPackage().replace('.', '_');
+		String fileName = getAliasNameWithoutPackage().replace('.', '_');
+		String aliasPkg = getAliasPkg();
+		if (aliasPkg.isEmpty()) {
+			return fileName;
+		}
+		return aliasPkg.replace('.', File.separatorChar) + File.separatorChar + fileName;
 	}
 
 	public String getFullName() {
@@ -248,12 +256,17 @@ public final class ClassInfo implements Comparable<ClassInfo> {
 		return parentClass.getAliasNameWithoutPackage() + '.' + getAliasShortName();
 	}
 
-	@Nullable
-	public ClassInfo getParentClass() {
+	/**
+	 * Return the outer class of the class represented by this ClassInfo
+	 */
+	public @Nullable ClassInfo getParentClass() {
 		return parentClass;
 	}
 
-	public ClassInfo getTopParentClass() {
+	/**
+	 * Return the top outer class of the class represented by this ClassInfo
+	 */
+	public @Nullable ClassInfo getTopParentClass() {
 		if (parentClass != null) {
 			ClassInfo topCls = parentClass.getTopParentClass();
 			return topCls != null ? topCls : parentClass;

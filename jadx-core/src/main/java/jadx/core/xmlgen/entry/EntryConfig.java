@@ -1,6 +1,6 @@
 /**
- * Copyright (C) 2018 Ryszard Wiśniewski <brut.alll@gmail.com>
- * Copyright (C) 2018 Connor Tumbleson <connor.tumbleson@gmail.com>
+ * Copyright (C) 2018 Ryszard Wiśniewski "brut.alll(at)gmail.com"
+ * Copyright (C) 2018 Connor Tumbleson "connor.tumbleson(at)gmail.com"
  * <p>
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -488,7 +488,7 @@ public class EntryConfig {
 		if (getClass() != obj.getClass()) {
 			return false;
 		}
-		final EntryConfig other = (EntryConfig) obj;
+		EntryConfig other = (EntryConfig) obj;
 		return this.mQualifiers.equals(other.mQualifiers);
 	}
 

@@ -28,6 +28,7 @@ import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 
 import org.apache.commons.text.StringEscapeUtils;
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -148,9 +149,9 @@ public class QuarkReportPanel extends ContentPanel {
 		StringEscapeUtils.Builder builder = StringEscapeUtils.builder(StringEscapeUtils.ESCAPE_HTML4);
 		builder.append("<h1>Quark Analysis Report</h1>");
 		builder.append("<h3>");
-		builder.append("File: ").append(data.apk_filename);
+		builder.append("File: ").escape(data.apk_filename);
 		builder.append("<br>");
-		builder.append("Treat level: ").append(data.threat_level);
+		builder.append("Treat level: ").escape(data.threat_level);
 		builder.append("<br>");
 		builder.append("Total score: ").append(Integer.toString(data.total_score));
 		builder.append("</h3>");
@@ -159,7 +160,7 @@ public class QuarkReportPanel extends ContentPanel {
 
 	@Override
 	public void loadSettings() {
-		Font settingsFont = getMainWindow().getSettings().getFont();
+		Font settingsFont = getMainWindow().getSettings().getCodeFont();
 		this.font = settingsFont.deriveFont(settingsFont.getSize2D() + 1.f);
 		this.boldFont = font.deriveFont(Font.BOLD);
 		header.setFont(font);
@@ -167,7 +168,7 @@ public class QuarkReportPanel extends ContentPanel {
 		cellRenderer.clearCache();
 	}
 
-	private static Object getNodeUnderMouse(JTree tree, MouseEvent mouseEvent) {
+	private static @Nullable Object getNodeUnderMouse(JTree tree, MouseEvent mouseEvent) {
 		TreePath path = tree.getPathForLocation(mouseEvent.getX(), mouseEvent.getY());
 		return path != null ? path.getLastPathComponent() : null;
 	}
@@ -212,7 +213,7 @@ public class QuarkReportPanel extends ContentPanel {
 
 		@Override
 		public Component render() {
-			JLabel label = new NodeLabel(((String) getUserObject()));
+			JLabel label = new NodeLabel((String) getUserObject());
 			label.setFont(bold ? boldFont : font);
 			label.setIcon(null);
 			label.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));

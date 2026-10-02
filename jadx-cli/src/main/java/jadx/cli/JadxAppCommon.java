@@ -13,14 +13,18 @@ import jadx.zip.security.JadxZipSecurity;
 public class JadxAppCommon {
 
 	public static void applyEnvVars(JadxArgs jadxArgs) {
-		Set<JadxSecurityFlag> flags = JadxSecurityFlag.all();
 		IJadxZipSecurity zipSecurity;
+		Set<JadxSecurityFlag> flags;
 
-		boolean disableXmlSecurity = JadxCommonEnv.getBool("JADX_DISABLE_XML_SECURITY", false);
-		if (disableXmlSecurity) {
-			flags.remove(JadxSecurityFlag.SECURE_XML_PARSER);
-			// TODO: not related to 'xml security', but kept for compatibility
-			flags.remove(JadxSecurityFlag.VERIFY_APP_PACKAGE);
+		if (JadxCommonEnv.getBool("JADX_DISABLE_ALL_SECURITY_FLAGS", false)) {
+			flags = JadxSecurityFlag.none();
+		} else {
+			flags = JadxSecurityFlag.all();
+			if (JadxCommonEnv.getBool("JADX_DISABLE_XML_SECURITY", false)) {
+				flags.remove(JadxSecurityFlag.SECURE_XML_PARSER);
+				// TODO: not related to 'xml security', but kept for compatibility
+				flags.remove(JadxSecurityFlag.VERIFY_APP_PACKAGE);
+			}
 		}
 
 		boolean disableZipSecurity = JadxCommonEnv.getBool("JADX_DISABLE_ZIP_SECURITY", false);

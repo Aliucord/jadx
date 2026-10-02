@@ -76,6 +76,14 @@ public class ClspGraph {
 		return nameMap.get(type.getObject());
 	}
 
+	public ClspClass getClsDetails(String fullClsName) {
+		return nameMap.get(fullClsName);
+	}
+
+	public Map<String, ClspClass> getClsNameMap() {
+		return nameMap;
+	}
+
 	@Nullable
 	public IMethodDetails getMethodDetails(MethodInfo methodInfo) {
 		ClspClass cls = nameMap.get(methodInfo.getDeclClass().getRawName());
@@ -137,7 +145,7 @@ public class ClspGraph {
 		implementsCache = map;
 	}
 
-	public String getCommonAncestor(String clsName, String implClsName) {
+	public @Nullable String getCommonAncestor(String clsName, String implClsName) {
 		if (clsName.equals(implClsName)) {
 			return clsName;
 		}
@@ -153,7 +161,7 @@ public class ClspGraph {
 		return searchCommonParent(anc, cls);
 	}
 
-	private String searchCommonParent(Set<String> anc, ClspClass cls) {
+	private @Nullable String searchCommonParent(Set<String> anc, ClspClass cls) {
 		for (ArgType p : cls.getParents()) {
 			String name = p.getObject();
 			if (anc.contains(name)) {
@@ -228,8 +236,7 @@ public class ClspGraph {
 		}
 	}
 
-	@Nullable
-	private ClspClass getClspClass(ArgType clsType) {
+	private @Nullable ClspClass getClspClass(ArgType clsType) {
 		ClspClass clspClass = nameMap.get(clsType.getObject());
 		if (clspClass == null) {
 			missingClasses.add(clsType.getObject());

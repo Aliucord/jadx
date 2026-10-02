@@ -14,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import jadx.api.JavaClass;
+import jadx.api.JavaMethod;
 import jadx.api.JavaNode;
 
 import static jadx.api.plugins.utils.Utils.constSet;
@@ -47,11 +48,15 @@ public final class JadxTokenMaker extends JavaTokenMaker {
 	private void processTokens(Token tokens) {
 		Token prev = null;
 		Token current = tokens;
-		while (current != null) {
+		while (current != null && current.getType() != TokenTypes.NULL) {
 			if (prev != null) {
 				switch (current.getType()) {
 					case TokenTypes.RESERVED_WORD:
 						fixContextualKeyword(current);
+						break;
+
+					case TokenTypes.FUNCTION:
+						fixIdentifierWithTheSameNameAsJavaLangClass(current);
 						break;
 
 					case TokenTypes.IDENTIFIER:
@@ -76,6 +81,24 @@ public final class JadxTokenMaker extends JavaTokenMaker {
 		String lexeme = token.getLexeme(); // TODO: create new string every call, better to avoid
 		if (lexeme != null && CONTEXTUAL_KEYWORDS.contains(lexeme)) {
 			token.setType(TokenTypes.IDENTIFIER);
+		}
+	}
+
+	private void fixIdentifierWithTheSameNameAsJavaLangClass(Token token) {
+		JavaNode identifier = codeArea.getJavaNodeAtOffset(token.getTextOffset());
+		if (identifier == null) {
+			return;
+		}
+		String lexeme = token.getLexeme();
+		if (lexeme.equals(identifier.getName())) {
+			token.setType(TokenTypes.IDENTIFIER);
+			return;
+		}
+		if (identifier instanceof JavaMethod) {
+			JavaClass javaCls = identifier.getDeclaringClass();
+			if (lexeme.equals(javaCls.getName())) {
+				token.setType(TokenTypes.IDENTIFIER);
+			}
 		}
 	}
 
