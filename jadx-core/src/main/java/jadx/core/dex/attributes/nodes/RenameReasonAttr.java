@@ -16,6 +16,8 @@ public class RenameReasonAttr implements IJadxAttribute {
 		return newAttr;
 	}
 
+	private String alias = null;
+	private String originalName = null;
 	private String description;
 
 	public RenameReasonAttr() {
@@ -64,6 +66,40 @@ public class RenameReasonAttr implements IJadxAttribute {
 
 	public String getDescription() {
 		return description;
+	}
+
+	public String getAlias() {
+		return alias;
+	}
+
+	public String getOriginalName() {
+		return originalName;
+	}
+
+	public Boolean getRenamed() {
+		return alias == null;
+	}
+
+	public RenameReasonAttr configureComment(String alias) {
+		return configureComment(alias, true);
+	}
+	public RenameReasonAttr configureComment(String alias, boolean override) {
+		if (override || this.alias == null) {
+			this.alias = alias;
+		}
+		this.originalName = null;
+		return this;
+	}
+
+	public RenameReasonAttr configureRenamed(String originalName) {
+		return configureRenamed(originalName, true);
+	}
+	public RenameReasonAttr configureRenamed(String originalName, boolean override) {
+		if (override || this.originalName == null) {
+			this.originalName = originalName;
+		}
+		this.alias = null;
+		return this;
 	}
 
 	@Override

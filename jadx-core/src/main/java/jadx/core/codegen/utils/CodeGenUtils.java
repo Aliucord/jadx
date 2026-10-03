@@ -1,6 +1,7 @@
 package jadx.core.codegen.utils;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.function.BiConsumer;
 import java.util.regex.Pattern;
 
@@ -12,6 +13,7 @@ import jadx.api.data.CommentStyle;
 import jadx.api.plugins.input.data.attributes.JadxAttrType;
 import jadx.api.plugins.input.data.attributes.types.SourceFileAttr;
 import jadx.core.dex.attributes.AType;
+import jadx.core.dex.attributes.AttrNode;
 import jadx.core.dex.attributes.IAttributeNode;
 import jadx.core.dex.attributes.nodes.JadxCommentsAttr;
 import jadx.core.dex.attributes.nodes.JadxError;
@@ -139,15 +141,37 @@ public class CodeGenUtils {
 
 	public static void addClassRenamedComment(ICodeWriter code, ClassNode cls) {
 		ClassInfo classInfo = cls.getClassInfo();
-		if (classInfo.hasAlias()) {
+		if (classInfo.hasAlias() || cls.contains(AType.RENAME_REASON)) {
 			addRenamedComment(code, cls, classInfo.getType().getObject());
 		}
 	}
 
 	public static void addRenamedComment(ICodeWriter code, NotificationAttrNode node, String origName) {
+		RenameReasonAttr renameReasonAttr = node.get(AType.RENAME_REASON);
+		String originalName;
+		String alias;
+
+		if (renameReasonAttr != null) {
+			String reasonOriginalName = renameReasonAttr.getOriginalName();
+			if (reasonOriginalName != null) {
+				originalName = reasonOriginalName;
+			} else {
+				originalName = origName;
+			}
+			alias = renameReasonAttr.getAlias();
+		} else {
+			originalName = origName;
+			alias = null;
+		}
+		if (Objects.equals(originalName, alias)) return;
+
 		addJadxNodeComment(code, node, CommentsLevel.INFO, (commentCode, newLinePrefix) -> {
-			commentCode.add("renamed from: ").add(origName);
-			RenameReasonAttr renameReasonAttr = node.get(AType.RENAME_REASON);
+			if (alias != null) {
+				commentCode.add("source name: ").add(alias);
+			} else {
+				commentCode.add("renamed from: ").add(originalName);
+			}
+
 			if (renameReasonAttr != null) {
 				commentCode.add(", reason: ").add(renameReasonAttr.getDescription());
 			}

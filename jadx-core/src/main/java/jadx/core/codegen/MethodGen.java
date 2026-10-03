@@ -108,7 +108,7 @@ public class MethodGen {
 		if (clsAccFlags.isAnnotation()) {
 			ai = ai.remove(AccessFlags.PUBLIC);
 		}
-		if (mth.getMethodInfo().hasAlias() && !ai.isConstructor()) {
+		if ((mth.getMethodInfo().hasAlias() || mth.contains(AType.RENAME_REASON)) && !ai.isConstructor()) {
 			CodeGenUtils.addRenamedComment(code, mth, mth.getName());
 		}
 		if (mth.contains(AFlag.INCONSISTENT_CODE) && mth.checkCommentsLevel(CommentsLevel.ERROR)) {

@@ -445,7 +445,7 @@ public class ClassGen {
 			addFieldUsageInfo(code, f);
 		}
 		CodeGenUtils.addComments(code, f);
-		if (f.getFieldInfo().hasAlias()) {
+		if (f.getFieldInfo().hasAlias() || f.contains(AType.RENAME_REASON)) {
 			CodeGenUtils.addRenamedComment(code, f, f.getName());
 		}
 		annotationGen.addForField(code, f);

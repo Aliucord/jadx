@@ -14,15 +14,15 @@ import kotlin.metadata.KmClass
 object KotlinMetadataUtils {
 
 	@JvmStatic
-	fun getAlias(cls: ClassNode): ClassAliasRename? {
+	fun getAlias(cls: ClassNode, renaming: Boolean): ClassAliasRename? {
 		val annotation = cls.getMetadata() ?: return null
-		return getClassAlias(cls, annotation)
+		return getClassAlias(cls, annotation, renaming)
 	}
 
 	/**
 	 * Try to get class info from Kotlin Metadata annotation
 	 */
-	private fun getClassAlias(cls: ClassNode, annotation: Metadata): ClassAliasRename? {
+	private fun getClassAlias(cls: ClassNode, annotation: Metadata, renaming: Boolean): ClassAliasRename? {
 		val firstValue = annotation.data2.getOrNull(0) ?: return null
 
 		try {
@@ -33,7 +33,12 @@ object KotlinMetadataUtils {
 
 			val alias = splitAndCheckClsName(cls, clsName)
 			if (alias != null) {
-				RenameReasonAttr.forNode(cls).append("from Kotlin metadata")
+				val reason = RenameReasonAttr.forNode(cls).append("from Kotlin metadata")
+				if (renaming) {
+					reason.configureRenamed(null)
+				} else {
+					reason.configureComment(clsName)
+				}
 				return alias
 			}
 		} catch (e: Exception) {

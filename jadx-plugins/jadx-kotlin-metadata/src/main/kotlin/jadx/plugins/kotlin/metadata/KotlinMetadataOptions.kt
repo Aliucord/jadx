@@ -4,25 +4,52 @@ import jadx.api.plugins.options.impl.BasePluginOptionsBuilder
 import jadx.plugins.kotlin.metadata.KotlinMetadataPlugin.Companion.PLUGIN_ID
 
 class KotlinMetadataOptions : BasePluginOptionsBuilder() {
-	var isClassAlias: Boolean = true
+	enum class Value {
+		YES,
+		COMMENT,
+		NO,
+		;
+
+		inline val shouldRename get() = this == YES
+		inline val isUsed get() = this != NO
+
+		companion object {
+			fun fromString(str: String): Value {
+				return when (str.lowercase()) {
+					"yes", "true", "rename" -> YES
+					"comment" -> COMMENT
+					"no", "false" -> NO
+					else -> NO
+				}
+			}
+
+			val default = YES
+			val values = entries.toTypedArray()
+		}
+	}
+
+	private fun valueOption(name: String) =
+		enumOption(name, Value.values, Value::fromString)
+			.defaultValue(Value.default)
+
+	var isClassAlias: Value = Value.default
 		private set
 	var isMethodArgs: Boolean = true
 		private set
-	var isFields: Boolean = true
+	var isFields: Value = Value.default
 		private set
-	var isCompanion: Boolean = true
+	var isCompanion: Value = Value.default
 		private set
 	var isDataClass: Boolean = true
 		private set
-	var isToString: Boolean = true
+	var isToString: Value = Value.default
 		private set
-	var isGetters: Boolean = true
+	var isGetters: Value = Value.default
 		private set
 
 	override fun registerOptions() {
-		boolOption(CLASS_ALIAS_OPT)
+		valueOption(CLASS_ALIAS_OPT)
 			.description("rename class alias")
-			.defaultValue(true)
 			.setter { isClassAlias = it }
 
 		boolOption(METHOD_ARGS_OPT)
@@ -30,14 +57,12 @@ class KotlinMetadataOptions : BasePluginOptionsBuilder() {
 			.defaultValue(true)
 			.setter { isMethodArgs = it }
 
-		boolOption(FIELDS_OPT)
+		valueOption(FIELDS_OPT)
 			.description("rename fields")
-			.defaultValue(true)
 			.setter { isFields = it }
 
-		boolOption(COMPANION_OPT)
+		valueOption(COMPANION_OPT)
 			.description("rename companion object")
-			.defaultValue(true)
 			.setter { isCompanion = it }
 
 		boolOption(DATA_CLASS_OPT)
@@ -45,20 +70,18 @@ class KotlinMetadataOptions : BasePluginOptionsBuilder() {
 			.defaultValue(true)
 			.setter { isDataClass = it }
 
-		boolOption(TO_STRING_OPT)
+		valueOption(TO_STRING_OPT)
 			.description("rename fields using toString")
-			.defaultValue(true)
 			.setter { isToString = it }
 
-		boolOption(GETTERS_OPT)
+		valueOption(GETTERS_OPT)
 			.description("rename simple getters to field names")
-			.defaultValue(true)
 			.setter { isGetters = it }
 	}
 
-	fun isPreparePassNeeded(): Boolean = isClassAlias
+	fun isPreparePassNeeded(): Boolean = isClassAlias.isUsed
 
-	fun isDecompilePassNeeded(): Boolean = isMethodArgs || isFields || isCompanion || isDataClass || isToString || isGetters
+	fun isDecompilePassNeeded(): Boolean = isMethodArgs || isFields.isUsed || isCompanion.isUsed || isDataClass || isToString.isUsed || isGetters.isUsed
 
 	companion object {
 		const val CLASS_ALIAS_OPT = "$PLUGIN_ID.class-alias"
